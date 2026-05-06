@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Admin Panel</span>
+        <h1>QuizPathshala management</h1>
+        <p>Manage shared users, premium pricing, exams, sets, questions, and web support while the Telegram bot continues using the same database.</p>
+        <form method="post" action="{{ url_for('admin.admin_logout') }}">
+            <button class="button button-secondary" type="submit">Log Out</button>
+        </form>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container card-grid score-grid">
+        <article class="info-card"><h3>Total users</h3><p class="stat">{{ dashboard_counts.total_users }}</p></article>
+        <article class="info-card"><h3>Premium users</h3><p class="stat">{{ dashboard_counts.premium_users }}</p></article>
+        <article class="info-card"><h3>Admins</h3><p class="stat">{{ dashboard_counts.admin_users }}</p></article>
+        <article class="info-card"><h3>Questions</h3><p class="stat">{{ dashboard_counts.question_count }}</p></article>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="form-card">
+            <h2>Update premium prices</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="update_price">
+                <label for="plan_type">Plan</label>
+                <select id="plan_type" name="plan_type">
+                    <option value="week_1">week_1</option>
+                    <option value="month_1">month_1</option>
+                    <option value="month_3">month_3</option>
+                </select>
+                <label for="amount">Amount in INR</label>
+                <input id="amount" name="amount" type="text" placeholder="299">
+                <button class="button button-primary" type="submit">Update Price</button>
+            </form>
+            <div class="mini-table">
+                {% for item in premium_prices %}
+                <p>{{ item.key }}: INR {{ '%.2f'|format(item.amount_rupees) }}</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-card">
+            <h2>Add exam</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="add_exam">
+                <label for="exam_title">Exam title</label>
+                <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
+                <label for="exam_description">Description</label>
+                <textarea id="exam_description" name="description" rows="3"></textarea>
+                <button class="button button-primary" type="submit">Create Exam</button>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2>Add set</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="add_set">
+                <label for="set_exam_id">Exam</label>
+                <select id="set_exam_id" name="exam_id">
+                    {% for exam in exams %}
+                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
+                    {% endfor %}
+                </select>
+                <label for="set_title">Set title</label>
+                <input id="set_title" name="title" type="text" placeholder="Set 1">
+                <label for="set_description">Description</label>
+                <textarea id="set_description" name="description" rows="3"></textarea>
+                <label><input type="checkbox" name="is_premium_locked" value="1"> Premium locked</label>
+                <button class="button button-primary" type="submit">Create Set</button>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2>Add single question</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="add_question">
+                <label for="question_exam_id">Exam</label>
+                <select id="question_exam_id" name="exam_id">
+                    {% for exam in exams %}
+                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
+                    {% endfor %}
+                </select>
+                <label for="question_set_id">Set ID</label>
+                <input id="question_set_id" name="set_id" type="number" placeholder="1">
+                <label for="question_text">Question</label>
+                <textarea id="question_text" name="question_text" rows="4"></textarea>
+                <label>Option A</label><input name="option_a" type="text">
+                <label>Option B</label><input name="option_b" type="text">
+                <label>Option C</label><input name="option_c" type="text">
+                <label>Option D</label><input name="option_d" type="text">
+                <label for="correct_option">Correct option text</label>
+                <input id="correct_option" name="correct_option" type="text" placeholder="Option text, not A/B/C/D">
+                <label for="explanation">Explanation</label>
+                <textarea id="explanation" name="explanation" rows="3"></textarea>
+                <label for="image_path">Image path (optional)</label>
+                <input id="image_path" name="image_path" type="text" placeholder="data/images/example.jpg">
+                <label for="time_limit">Time limit in seconds</label>
+                <input id="time_limit" name="time_limit" type="number" min="1" placeholder="15">
+                <button class="button button-primary" type="submit">Add Question</button>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2>Bulk upload questions</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="bulk_import">
+                <label for="bulk_exam_id">Exam</label>
+                <select id="bulk_exam_id" name="exam_id">
+                    {% for exam in exams %}
+                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
+                    {% endfor %}
+                </select>
+                <label for="bulk_set_id">Set ID</label>
+                <input id="bulk_set_id" name="set_id" type="number" placeholder="1">
+                <label for="bulk_payload">Pipe-separated rows</label>
+                <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg"></textarea>
+                <button class="button button-primary" type="submit">Import Questions</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="data-card">
+            <h2>Users and roles</h2>
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>Role</th><th>Premium</th><th>Score</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.full_name }}</td>
+                        <td>{{ user.user_role }}</td>
+                        <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+                        <td>{{ '%.2f'|format(user.score) }}</td>
+                        <td>
+                            {% if current_user.user_role == 'super_admin' and user.user_role != 'super_admin' %}
+                            <form method="post">
+                                <input type="hidden" name="action" value="change_role">
+                                <input type="hidden" name="target_user_id" value="{{ user.user_id }}">
+                                <input type="hidden" name="target_role" value="{{ 'user' if user.user_role == 'admin' else 'admin' }}">
+                                <button class="button button-secondary" type="submit">Make {{ 'User' if user.user_role == 'admin' else 'Admin' }}</button>
+                            </form>
+                            {% else %}
+                            <span>-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Question search</h2>
+            <form method="get">
+                <label for="question_search">Search by question text</label>
+                <input id="question_search" name="q" type="text" value="{{ search_query }}" placeholder="constitution, math, reasoning...">
+                <button class="button button-primary" type="submit">Search</button>
+            </form>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Exam</th><th>Set</th><th>Question</th><th>Delete</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in question_search_results %}
+                    <tr>
+                        <td>{{ item.question_id }}</td>
+                        <td>{{ item.exam_title }}</td>
+                        <td>{{ item.set_title }}</td>
+                        <td>{{ item.question_text }}</td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="action" value="delete_question">
+                                <input type="hidden" name="question_id" value="{{ item.question_id }}">
+                                <button class="button button-secondary" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5">Search for a question to manage it.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Exam, set, and question manager</h2>
+            {% for exam in catalog %}
+            <article class="info-card">
+                <div class="quiz-set-row">
+                    <div>
+                        <h3>{{ exam.title }}</h3>
+                        <p>{{ exam.description or 'No description' }}</p>
+                        <p>{{ exam.question_count }} questions across {{ exam.set_count }} sets</p>
+                    </div>
+                    <form method="post">
+                        <input type="hidden" name="action" value="delete_exam">
+                        <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
+                        <button class="button button-secondary" type="submit">Delete Exam</button>
+                    </form>
+                </div>
+                {% for set_item in exam.sets %}
+                <div class="catalog-card compact-card">
+                    <div class="quiz-set-row">
+                        <div>
+                            <h4>{{ set_item.title }}</h4>
+                            <p>{{ set_item.description or 'No description' }}</p>
+                            <p>Set ID {{ set_item.set_id }} | {{ set_item.question_count }} questions | {{ 'Premium' if set_item.is_premium_locked else 'Free' }}</p>
+                        </div>
+                        <div class="hero-actions">
+                            <form method="post">
+                                <input type="hidden" name="action" value="toggle_set_lock">
+                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                <input type="hidden" name="lock_state" value="{{ 0 if set_item.is_premium_locked else 1 }}">
+                                <button class="button button-secondary" type="submit">{{ 'Make Free' if set_item.is_premium_locked else 'Make Premium' }}</button>
+                            </form>
+                            <form method="post">
+                                <input type="hidden" name="action" value="delete_set">
+                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                <button class="button button-secondary" type="submit">Delete Set</button>
+                            </form>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr><th>ID</th><th>Question</th><th>Correct</th><th>Delete</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for question in set_item.questions[:10] %}
+                            <tr>
+                                <td>{{ question.question_id }}</td>
+                                <td>{{ question.question_text }}</td>
+                                <td>{{ question.correct_option }}</td>
+                                <td>
+                                    <form method="post">
+                                        <input type="hidden" name="action" value="delete_question">
+                                        <input type="hidden" name="question_id" value="{{ question.question_id }}">
+                                        <button class="button button-secondary" type="submit">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4">No questions yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+            </article>
+            {% else %}
+            <p>No exams found.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="data-card">
+            <h2>Payments</h2>
+            <table>
+                <thead>
+                    <tr><th>Payment ID</th><th>Plan</th><th>Status</th><th>Amount</th></tr>
+                </thead>
+                <tbody>
+                    {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.payment_id }}</td>
+                        <td>{{ payment.plan_type }}</td>
+                        <td>{{ payment.status }}</td>
+                        <td>{{ payment.amount }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No verified payments yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Orders</h2>
+            <table>
+                <thead>
+                    <tr><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>{{ order.order_id }}</td>
+                        <td>{{ order.user_id }}</td>
+                        <td>{{ order.plan_type }}</td>
+                        <td>{{ order.status }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No orders yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Support Tickets</h2>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr>
+                </thead>
+                <tbody>
+                    {% for ticket in support_tickets %}
+                    <tr>
+                        <td>{{ ticket.support_id }}</td>
+                        <td>{{ ticket.full_name }}</td>
+                        <td>{{ ticket.status }}</td>
+                        <td>{{ ticket.message }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No support tickets yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

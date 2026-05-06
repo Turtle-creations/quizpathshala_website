@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Dashboard</span>
+        <h1>Welcome back, {{ user.full_name }}</h1>
+        <p>Your web account now tracks quiz progress, premium status, and recent practice while Telegram stays available as your support and companion channel.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <article class="info-card">
+            <h2>Profile</h2>
+            <p><strong>Role:</strong> {{ user.user_role.replace('_', ' ')|title }}</p>
+            <p><strong>Email:</strong> {{ user.email or user.login_identifier or "Not set" }}</p>
+            <p><strong>Phone:</strong> {{ user.phone_number or "Not set" }}</p>
+            <p><strong>Premium:</strong> {{ "Active" if user.is_premium else "Free" }}</p>
+            <p><strong>Bot support:</strong> <a href="{{ support_telegram }}" target="_blank" rel="noreferrer">Open Telegram</a></p>
+        </article>
+        <article class="info-card">
+            <h2>Performance</h2>
+            <p><strong>Quizzes played:</strong> {{ user.quiz_played }}</p>
+            <p><strong>Correct answers:</strong> {{ user.correct_answers }}</p>
+            <p><strong>Wrong answers:</strong> {{ user.wrong_answers }}</p>
+            <p><strong>Score:</strong> {{ "%.2f"|format(user.score) }}</p>
+            <p><strong>Best recent score:</strong> {{ "%.2f"|format(performance.best_score) }}</p>
+            <p><strong>Average recent score:</strong> {{ "%.2f"|format(performance.average_score) }}</p>
+        </article>
+        <article class="info-card">
+            <h2>Quick Actions</h2>
+            <div class="hero-actions">
+                <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Start Quiz</a>
+                <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">View Premium Plans</a>
+                <a class="button button-secondary" href="{{ support_telegram }}" target="_blank" rel="noreferrer">Open Telegram Support</a>
+                <a class="button button-secondary" href="{{ url_for('auth.logout') }}">Logout</a>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Recent Quiz Attempts</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Exam</th>
+                        <th>Set</th>
+                        <th>Score</th>
+                        <th>Accuracy</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for attempt in performance.recent_attempts %}
+                    <tr>
+                        <td>{{ attempt.created_at }}</td>
+                        <td>{{ attempt.exam_title or "-" }}</td>
+                        <td>{{ attempt.set_title or "-" }}</td>
+                        <td>{{ "%.2f"|format(attempt.score) }}</td>
+                        <td>{{ "%.2f"|format(attempt.accuracy) }}%</td>
+                        <td>{{ attempt.ended_reason.replace('_', ' ')|title }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6">No quiz attempts recorded yet. Start your first practice set from the web dashboard.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

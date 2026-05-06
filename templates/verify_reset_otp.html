@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Verify OTP</span>
+        <h1>Verify your reset code</h1>
+        <p>Enter the 6 digit OTP sent to your email. The code expires in 10 minutes and can be used only once.</p>
+        {% if dev_otp %}
+        <div class="flash flash-success">
+            <strong>DEV OTP:</strong> {{ dev_otp }}
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <form method="post" class="form-card">
+            <label for="email">Registered Email</label>
+            <input id="email" name="email" type="email" value="{{ prefilled_email }}" required>
+            <label for="otp">6 Digit OTP</label>
+            <input id="otp" name="otp" type="text" inputmode="numeric" maxlength="6" required>
+            <button class="button button-primary" type="submit">Verify OTP</button>
+            <p><a href="{{ url_for('auth.forgot_password') }}">Request a new OTP</a></p>
+        </form>
+    </div>
+</section>
+{% endblock %}

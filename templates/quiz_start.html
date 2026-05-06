@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Quiz Hub</span>
+        <h1>Select exam, category, and set</h1>
+        <p>Free and premium quizzes now use the same shared question bank as the Telegram bot, with category-wise practice and timer-based scoring on web.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container form-grid">
+        <div class="text-page">
+            <h2>How this works</h2>
+            <p>Every quiz follows the same QuizPathshala scoring model: +1 for correct answers, -0.25 for wrong answers, and a countdown for each question.</p>
+            <p>Premium-locked sets stay protected until your account is activated by the verified Razorpay webhook flow.</p>
+            <div class="hero-actions">
+                <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">See Premium Plans</a>
+            </div>
+        </div>
+        <div class="form-card">
+            <h2>Available exams and sets</h2>
+            {% for exam in catalog %}
+            <div class="catalog-card compact-card">
+                <h3>{{ exam.title }}</h3>
+                <p>{{ exam.description or "Exam practice category" }}</p>
+                <p><strong>{{ exam.set_count }}</strong> sets | <strong>{{ exam.question_count }}</strong> total questions</p>
+                {% for set_item in exam.sets %}
+                <form method="post" class="quiz-set-form">
+                    <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                    <div class="quiz-set-row">
+                        <div>
+                            <h4>{{ set_item.title }}</h4>
+                            <p>{{ set_item.description or "Practice set" }}</p>
+                            <p>{{ set_item.question_count }} questions{% if set_item.locked %} | Premium only{% else %} | Free access{% endif %}</p>
+                        </div>
+                        <div class="quiz-set-actions">
+                            <select name="question_count">
+                                {% for count in question_counts %}
+                                <option value="{{ count }}">{{ count }} Questions</option>
+                                {% endfor %}
+                            </select>
+                            <button class="button button-primary" type="submit" {% if not set_item.has_access %}disabled{% endif %}>
+                                {% if set_item.has_access %}Start Practice{% else %}Premium Only{% endif %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p>No quiz categories are available yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}

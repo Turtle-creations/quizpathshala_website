@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Result</span>
+        <h1>Quiz summary</h1>
+        <p>{{ current_set.title if current_set else "Quiz" }} completed with full answer review below.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="card-grid score-grid">
+            <article class="info-card">
+                <h3>Score</h3>
+                <p class="stat">{{ "%.2f"|format(summary.score) }}</p>
+            </article>
+            <article class="info-card">
+                <h3>Accuracy</h3>
+                <p class="stat">{{ "%.2f"|format(summary.accuracy) }}%</p>
+            </article>
+            <article class="info-card">
+                <h3>Correct</h3>
+                <p class="stat">{{ summary.correct }}</p>
+            </article>
+            <article class="info-card">
+                <h3>Wrong</h3>
+                <p class="stat">{{ summary.wrong }}</p>
+            </article>
+        </div>
+        <div class="result-details text-page">
+            <p><strong>Attempted:</strong> {{ summary.attempted }}</p>
+            <p><strong>Skipped:</strong> {{ summary.skipped }}</p>
+            <p><strong>Negative marking:</strong> -{{ "%.2f"|format(summary.negative_marking) }}</p>
+            <p><strong>Ended reason:</strong> {{ summary.ended_reason.replace('_', ' ')|title }}</p>
+            <p><strong>Started at:</strong> {{ summary.started_at or '-' }}</p>
+            <p><strong>Completed at:</strong> {{ summary.completed_at or '-' }}</p>
+        </div>
+        <div class="hero-actions">
+            <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Play Quiz Again</a>
+            <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">Upgrade to Premium</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Question-by-question review</h2>
+            {% for item in summary.review_items %}
+            <article class="info-card">
+                <p><strong>Q{{ item.number }}.</strong> {{ item.question_text }}</p>
+                {% if item.image_path %}
+                <img class="question-image" src="{{ url_for('media_file', relative_path=item.image_path) }}" alt="Question illustration">
+                {% endif %}
+                <p><strong>Status:</strong>
+                    {% if item.action == 'skip' %}
+                    Skipped
+                    {% elif item.action == 'timeout' %}
+                    Timed out
+                    {% elif item.correct %}
+                    Correct
+                    {% else %}
+                    Wrong
+                    {% endif %}
+                </p>
+                <p><strong>Your answer:</strong> {{ item.selected_text or 'Not answered' }}</p>
+                <p><strong>Correct answer:</strong> {{ item.correct_answer }}</p>
+                {% if item.explanation %}
+                <p><strong>Explanation:</strong> {{ item.explanation }}</p>
+                {% endif %}
+            </article>
+            {% else %}
+            <p>No review items were recorded for this attempt.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Recent performance trend</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Set</th>
+                        <th>Score</th>
+                        <th>Accuracy</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for attempt in performance.recent_attempts %}
+                    <tr>
+                        <td>{{ attempt.created_at }}</td>
+                        <td>{{ attempt.set_title or '-' }}</td>
+                        <td>{{ "%.2f"|format(attempt.score) }}</td>
+                        <td>{{ "%.2f"|format(attempt.accuracy) }}%</td>
+                        <td>{{ attempt.ended_reason.replace('_', ' ')|title }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5">No recent attempts found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

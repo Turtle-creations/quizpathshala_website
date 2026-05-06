@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="landing-shell">
+    <div class="container landing-card">
+        <section class="hero hero-modern">
+            <div class="hero-grid hero-grid-modern">
+                <div class="hero-copy-block">
+                    <span class="eyebrow">For SSC, Banking, and Railway Aspirants</span>
+                    <h1>Practice Smarter with <span class="headline-accent">QuizPathshala</span></h1>
+                    <p class="hero-copy">An online quiz preparation platform for students and exam aspirants preparing for SSC, Banking, Railway, and other competitive exams.</p>
+                    <p class="hero-subcopy">Build exam confidence through structured mock-style quizzes, clear performance insights, premium learning access, and a secure website-first platform designed for trust.</p>
+                    <div class="hero-actions">
+                        <a class="button button-primary" href="/quiz">Start Free Quiz</a>
+                        <a class="button button-secondary" href="/premium">View Premium Plans</a>
+                    </div>
+                    <p class="trust-line">Trusted by students preparing for competitive exams</p>
+                    <div class="hero-trust-row">
+                        <span>Secure Razorpay checkout</span>
+                        <span>Server-side premium activation</span>
+                        <span>Telegram companion support</span>
+                    </div>
+                </div>
+                <div class="hero-visual-card">
+                    <svg class="hero-illustration" viewBox="0 0 560 440" role="img" aria-label="Quiz and education illustration">
+                        <defs>
+                            <linearGradient id="cardBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#69a8ff"/>
+                                <stop offset="100%" stop-color="#2f72f8"/>
+                            </linearGradient>
+                        </defs>
+                        <rect x="38" y="44" width="484" height="348" rx="36" fill="#e8f2ff"/>
+                        <rect x="72" y="86" width="250" height="230" rx="28" fill="#ffffff"/>
+                        <rect x="96" y="116" width="140" height="18" rx="9" fill="#dcecff"/>
+                        <rect x="96" y="150" width="178" height="14" rx="7" fill="#edf4ff"/>
+                        <rect x="96" y="190" width="198" height="46" rx="18" fill="#f4f8ff"/>
+                        <circle cx="122" cy="213" r="12" fill="#2f72f8"/>
+                        <path d="M116 213l5 5 9-11" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <rect x="144" y="203" width="116" height="10" rx="5" fill="#bfd8ff"/>
+                        <rect x="144" y="220" width="92" height="8" rx="4" fill="#d9e9ff"/>
+                        <rect x="96" y="250" width="198" height="46" rx="18" fill="#f4f8ff"/>
+                        <circle cx="122" cy="273" r="12" fill="#9bc0ff"/>
+                        <rect x="144" y="263" width="126" height="10" rx="5" fill="#bfd8ff"/>
+                        <rect x="144" y="280" width="84" height="8" rx="4" fill="#d9e9ff"/>
+                        <rect x="354" y="104" width="132" height="160" rx="30" fill="url(#cardBlue)"/>
+                        <rect x="378" y="130" width="84" height="12" rx="6" fill="#ffffff" opacity="0.95"/>
+                        <rect x="378" y="154" width="54" height="10" rx="5" fill="#d5e5ff"/>
+                        <circle cx="420" cy="214" r="34" fill="#ffffff"/>
+                        <path d="M406 214l10 10 18-22" fill="none" stroke="#2f72f8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <rect x="336" y="286" width="162" height="74" rx="28" fill="#ffffff"/>
+                        <rect x="360" y="310" width="92" height="10" rx="5" fill="#c4dbff"/>
+                        <rect x="360" y="329" width="118" height="10" rx="5" fill="#e4efff"/>
+                        <circle cx="102" cy="360" r="18" fill="#ffffff"/>
+                        <circle cx="486" cy="72" r="14" fill="#ffffff"/>
+                    </svg>
+                </div>
+            </div>
+        </section>
+
+        <section class="section section-home-features">
+            <div class="section-heading section-heading-centered">
+                <span class="eyebrow">Core Features</span>
+                <h2>Everything learners need in one place</h2>
+            </div>
+            <div class="feature-tiles">
+                <article class="feature-tile">
+                    <div class="feature-icon feature-icon-quiz">
+                        <span>?</span>
+                    </div>
+                    <h3>Practice Quizzes</h3>
+                    <p>Attempt chapter-wise and exam-style quizzes to build consistency and revision speed.</p>
+                </article>
+                <article class="feature-tile">
+                    <div class="feature-icon feature-icon-track">
+                        <span>%</span>
+                    </div>
+                    <h3>Track Performance</h3>
+                    <p>Monitor score, accuracy, correct answers, and wrong answers with instant results.</p>
+                </article>
+                <article class="feature-tile">
+                    <div class="feature-icon feature-icon-premium">
+                        <span>*</span>
+                    </div>
+                    <h3>Premium Plans</h3>
+                    <p>Unlock premium quiz sets, extended access, and a deeper preparation path through secure checkout.</p>
+                </article>
+                <article class="feature-tile">
+                    <div class="feature-icon feature-icon-support">
+                        <span>@</span>
+                    </div>
+                    <h3>Telegram Support</h3>
+                    <p>Use the companion Telegram bot for support, continuity, and exam preparation updates.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="section how-it-works-section">
+            <div class="section-heading section-heading-centered">
+                <span class="eyebrow">How It Works</span>
+                <h2>Start your preparation in three simple steps</h2>
+            </div>
+            <div class="steps-grid">
+                <article class="step-card">
+                    <div class="step-number">1</div>
+                    <h3>Choose a Quiz</h3>
+                    <p>Select your category and question count to begin practicing based on your exam target.</p>
+                </article>
+                <article class="step-card">
+                    <div class="step-number">2</div>
+                    <h3>Practice and Learn</h3>
+                    <p>Answer one question at a time, review your progress, and build confidence through repetition.</p>
+                </article>
+                <article class="step-card">
+                    <div class="step-number">3</div>
+                    <h3>Upgrade When Ready</h3>
+                    <p>Unlock premium-only content and deeper preparation support with secure website checkout.</p>
+                </article>
+            </div>
+        </section>
+    </div>
+</section>
+{% endblock %}
