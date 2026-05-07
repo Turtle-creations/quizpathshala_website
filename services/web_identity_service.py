@@ -11,7 +11,9 @@ class WebIdentityService:
     AUTH_USER_KEY = "auth_user_id"
     ROLE_KEY = "auth_role"
     ADMIN_KEY = "admin_authenticated"
+    SNAPSHOT_KEY = "auth_user_snapshot"
     _AUTH_CACHE_KEY = "_web_identity_authenticated_user"
+    _SNAPSHOT_CACHE_KEY = "_web_identity_authenticated_snapshot"
     _CACHE_MISS = object()
 
     def get_or_create_user(self) -> dict:
@@ -56,7 +58,10 @@ class WebIdentityService:
             session[self.ADMIN_KEY] = True
         else:
             session.pop(self.ADMIN_KEY, None)
+        snapshot = self._build_user_snapshot(user)
+        session[self.SNAPSHOT_KEY] = snapshot
         self._set_cached_authenticated_user(dict(user))
+        self._set_cached_authenticated_snapshot(snapshot)
 
     def authenticate(self, login_identifier: str, password: str) -> dict:
         return user_service.authenticate_web_user(login_identifier, password)
@@ -73,6 +78,7 @@ class WebIdentityService:
         user_id = session.get(self.AUTH_USER_KEY)
         if not user_id:
             self._set_cached_authenticated_user({})
+            self._set_cached_authenticated_snapshot({})
             return {}
 
         cached_user = self._get_cached_authenticated_user()
@@ -84,16 +90,19 @@ class WebIdentityService:
             self.logout_user()
             return {}
 
-        self._set_cached_authenticated_user(user)
+        snapshot = self._build_user_snapshot(user)
+        session[self.SNAPSHOT_KEY] = snapshot
+        self._set_cached_authenticated_user(dict(user))
+        self._set_cached_authenticated_snapshot(snapshot)
         return dict(user)
 
     def is_authenticated(self) -> bool:
-        return bool(self.get_authenticated_user())
+        return bool(session.get(self.AUTH_USER_KEY))
 
     def get_role(self) -> str:
-        user = self.get_authenticated_user()
-        if user:
-            return str(user.get("user_role") or ("admin" if user.get("is_admin") else "user"))
+        snapshot = self.get_authenticated_user_snapshot()
+        if snapshot:
+            return str(snapshot.get("user_role") or ("admin" if snapshot.get("is_admin") else "user"))
         return str(session.get(self.ROLE_KEY) or "")
 
     def mark_admin_authenticated(self) -> None:
@@ -108,6 +117,7 @@ class WebIdentityService:
         session.pop(self.AUTH_USER_KEY, None)
         session.pop(self.ROLE_KEY, None)
         session.pop(self.ADMIN_KEY, None)
+        session.pop(self.SNAPSHOT_KEY, None)
         session.pop(self.SESSION_KEY, None)
         session.pop("web_user_name", None)
 
@@ -115,9 +125,22 @@ class WebIdentityService:
         self.logout_user()
 
     def is_admin_authenticated(self) -> bool:
-        user = self.get_authenticated_user()
-        role = user.get("user_role") if user else session.get(self.ROLE_KEY)
-        return bool(user and (self._is_privileged_role(role) or user.get("is_admin"))) or bool(session.get(self.ADMIN_KEY))
+        snapshot = self.get_authenticated_user_snapshot()
+        role = snapshot.get("user_role") if snapshot else session.get(self.ROLE_KEY)
+        return bool(snapshot and (self._is_privileged_role(role) or snapshot.get("is_admin"))) or bool(session.get(self.ADMIN_KEY))
+
+    def get_authenticated_user_snapshot(self) -> dict:
+        cached_snapshot = self._get_cached_authenticated_snapshot()
+        if cached_snapshot is not self._CACHE_MISS:
+            return dict(cached_snapshot) if cached_snapshot else {}
+
+        snapshot = session.get(self.SNAPSHOT_KEY) or {}
+        self._set_cached_authenticated_snapshot(snapshot)
+        return dict(snapshot) if snapshot else {}
+
+    def get_authenticated_user_id(self) -> int | None:
+        user_id = session.get(self.AUTH_USER_KEY)
+        return int(user_id) if user_id is not None else None
 
     def _get_cached_authenticated_user(self):
         if not has_request_context():
@@ -128,9 +151,29 @@ class WebIdentityService:
         if has_request_context():
             setattr(g, self._AUTH_CACHE_KEY, dict(user) if user else {})
 
+    def _get_cached_authenticated_snapshot(self):
+        if not has_request_context():
+            return self._CACHE_MISS
+        return getattr(g, self._SNAPSHOT_CACHE_KEY, self._CACHE_MISS)
+
+    def _set_cached_authenticated_snapshot(self, user: dict) -> None:
+        if has_request_context():
+            setattr(g, self._SNAPSHOT_CACHE_KEY, dict(user) if user else {})
+
     def _clear_cached_authenticated_user(self) -> None:
         if has_request_context() and hasattr(g, self._AUTH_CACHE_KEY):
             delattr(g, self._AUTH_CACHE_KEY)
+        if has_request_context() and hasattr(g, self._SNAPSHOT_CACHE_KEY):
+            delattr(g, self._SNAPSHOT_CACHE_KEY)
+
+    def _build_user_snapshot(self, user: dict) -> dict:
+        return {
+            "user_id": int(user["user_id"]),
+            "full_name": user.get("full_name") or "QuizPathshala User",
+            "user_role": str(user.get("user_role") or ("admin" if user.get("is_admin") else "user")),
+            "is_admin": 1 if user.get("is_admin") else 0,
+            "is_premium": 1 if user.get("is_premium") else 0,
+        }
 
     def _generate_user_id(self) -> int:
         return random.randint(7000000000, 7999999999)

@@ -13,6 +13,7 @@ from services.user_service_db import user_service
 class WebQuizService:
     QUIZ_COUNT_OPTIONS = (20, 50, 100)
     MAX_QUESTIONS_PER_QUIZ = 100
+    SESSION_STORAGE_KEY = "active_quiz_session"
 
     def __init__(self) -> None:
         self.sessions: dict[int, dict] = {}
@@ -77,12 +78,40 @@ class WebQuizService:
             "wrong_count": 0,
             "skipped_count": 0,
             "responses": [],
+            "stats_started": False,
         }
-        user_service.record_quiz_start(user_id)
         return self.sessions[user_id], None
 
     def get_session(self, user_id: int) -> dict | None:
         return self.sessions.get(user_id)
+
+    def build_session_snapshot(self, user_id: int) -> dict | None:
+        quiz_session = self.get_session(user_id)
+        if not quiz_session:
+            return None
+
+        current_question = None
+        index = int(quiz_session.get("index") or 0)
+        questions = quiz_session.get("questions") or []
+        if 0 <= index < len(questions):
+            current_question = self.get_current_question(user_id)
+
+        return {
+            "set_id": quiz_session.get("set_id"),
+            "set_title": quiz_session.get("set_title"),
+            "requested_count": quiz_session.get("requested_count"),
+            "index": index,
+            "total": len(questions),
+            "started_at": quiz_session.get("started_at"),
+            "locked": bool(quiz_session.get("locked")),
+            "correct_count": int(quiz_session.get("correct_count") or 0),
+            "wrong_count": int(quiz_session.get("wrong_count") or 0),
+            "skipped_count": int(quiz_session.get("skipped_count") or 0),
+            "last_result": deepcopy(quiz_session.get("last_result")),
+            "responses": deepcopy(quiz_session.get("responses") or []),
+            "current_question": deepcopy(current_question),
+            "stats_started": bool(quiz_session.get("stats_started")),
+        }
 
     def get_current_question(self, user_id: int) -> dict | None:
         session = self.get_session(user_id)
@@ -118,6 +147,10 @@ class WebQuizService:
             "time_limit": int(question.get("time_limit") or DEFAULT_QUESTION_TIME),
             "remaining_seconds": self.remaining_seconds(user_id),
         }
+
+        if not session.get("stats_started"):
+            user_service.record_quiz_start(user_id)
+            session["stats_started"] = True
 
         if action == "answer" and selected_index is not None and 0 <= selected_index < len(question["options"]):
             selected_option = question["options"][selected_index]
