@@ -29,7 +29,7 @@
                     {% for option in question.options %}
                     <button class="option-button" type="button" data-option-index="{{ loop.index0 }}">
                         <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
-                        <span>{{ option.text }}</span>
+                        <span class="option-copy">{{ option.text }}</span>
                     </button>
                     {% endfor %}
                 </div>
@@ -39,38 +39,39 @@
                 </div>
             </form>
             {% else %}
-            <div class="result-badge {% if active_result.correct %}result-good{% else %}result-bad{% endif %}">
-                {% if active_result.action == "skip" %}
-                Question skipped
-                {% elif active_result.action == "timeout" %}
-                Time is up for this question
-                {% elif active_result.correct %}
-                Correct answer
-                {% else %}
-                Wrong answer
-                {% endif %}
-            </div>
-            <div class="option-list option-list-review">
-                {% for option in active_result.options %}
-                {% set is_correct = loop.index0 == active_result.correct_index %}
-                {% set is_selected = active_result.selected_index is not none and loop.index0 == active_result.selected_index %}
-                <div class="option-review{% if is_correct %} option-review-correct{% endif %}{% if is_selected and not is_correct %} option-review-selected-wrong{% endif %}{% if is_selected and is_correct %} option-review-selected-correct{% endif %}">
-                    <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
-                    <div>
-                        <strong>{{ option.text }}</strong>
-                        {% if is_correct %}<p>Correct answer</p>{% endif %}
-                        {% if is_selected and not is_correct %}<p>Your answer</p>{% endif %}
-                    </div>
+            <div class="answer-review-shell">
+                <div class="result-badge review-status-badge {% if active_result.correct %}result-good{% else %}result-bad{% endif %}">
+                    {% if active_result.action == "skip" %}
+                    Question skipped
+                    {% elif active_result.action == "timeout" %}
+                    Time is up for this question
+                    {% elif active_result.correct %}
+                    Correct answer
+                    {% else %}
+                    Wrong answer
+                    {% endif %}
                 </div>
-                {% endfor %}
+
+                <div class="answer-review-grid">
+                    <article class="answer-review-card {% if active_result.correct %}answer-review-card-good{% elif active_result.selected_text %}answer-review-card-bad{% else %}answer-review-card-neutral{% endif %}">
+                        <span class="answer-review-label">Your answer</span>
+                        <p class="answer-review-value">
+                            {% if active_result.selected_text %}
+                            {{ active_result.selected_text }}
+                            {% elif active_result.action == "skip" %}
+                            No option selected
+                            {% else %}
+                            No answer submitted
+                            {% endif %}
+                        </p>
+                    </article>
+
+                    <article class="answer-review-card answer-review-card-correct">
+                        <span class="answer-review-label">Correct answer</span>
+                        <p class="answer-review-value">{{ active_result.correct_answer }}</p>
+                    </article>
+                </div>
             </div>
-            {% if active_result.selected_text %}
-            <p><strong>Your answer:</strong> {{ active_result.selected_text }}</p>
-            {% endif %}
-            <p><strong>Correct answer:</strong> {{ active_result.correct_answer }}</p>
-            {% if active_result.explanation %}
-            <p><strong>Explanation:</strong> {{ active_result.explanation }}</p>
-            {% endif %}
             <form accept-charset="UTF-8" method="post" id="next-question-form" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="next">
                 <button class="button button-primary" type="submit">Next Question</button>

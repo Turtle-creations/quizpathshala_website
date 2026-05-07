@@ -33,6 +33,24 @@ _BACKUP_TABLE = "mojibake_question_backups"
 _QUESTION_PURGE_BACKUP_TABLE = "question_cleanup_backups"
 
 
+def _sanitize_admin_anchor(value: str | None) -> str | None:
+    if not value:
+        return None
+    anchor = str(value).strip().lstrip("#")
+    if not anchor:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", anchor):
+        return None
+    return anchor
+
+
+def _admin_dashboard_redirect(redirect_values: dict[str, str | int], *, anchor: str | None = None):
+    location = url_for("admin.admin_dashboard", **redirect_values)
+    if anchor:
+        location = f"{location}#{anchor}"
+    return redirect(location)
+
+
 def admin_required(view_func):
     @wraps(view_func)
     def wrapper(*args, **kwargs):
@@ -537,8 +555,9 @@ def admin_dashboard():
 
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
-        current_query = (request.args.get("q") or "").strip()
+        current_query = (request.args.get("q") or request.form.get("q") or "").strip()
         redirect_values: dict[str, str | int] = {}
+        return_anchor = _sanitize_admin_anchor(request.form.get("return_anchor") or request.args.get("return_anchor"))
         if current_query:
             redirect_values["q"] = current_query
 
@@ -648,7 +667,7 @@ def admin_dashboard():
             if posted_question_id:
                 redirect_values["edit_question_id"] = posted_question_id
             flash(str(exc), "error")
-        return redirect(url_for("admin.admin_dashboard", **redirect_values))
+        return _admin_dashboard_redirect(redirect_values, anchor=return_anchor)
 
     dashboard = web_admin_service.dashboard_data()
     dashboard.pop("question_search_results", None)
