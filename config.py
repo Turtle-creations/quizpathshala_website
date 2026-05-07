@@ -9,30 +9,48 @@ def _read_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _normalize_database_url(raw_value: str) -> str:
+    normalized = (raw_value or "").strip()
+    if normalized.startswith("postgres://"):
+        return "postgresql://" + normalized[len("postgres://"):]
+    return normalized
+
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 IMAGE_DIR = DATA_DIR / "images"
-_shared_database_env = (os.getenv("QUIZPATHSHALA_SHARED_DB") or "").strip()
-_shared_data_dir_env = (os.getenv("QUIZPATHSHALA_SHARED_DATA_DIR") or "").strip()
+APP_ENV = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development").strip().lower()
+DATABASE_URL = _normalize_database_url(os.getenv("DATABASE_URL") or "")
+_db_path_env = (os.getenv("DB_PATH") or "").strip()
+_legacy_shared_database_env = (os.getenv("QUIZPATHSHALA_SHARED_DB") or "").strip()
+_legacy_shared_data_dir_env = (os.getenv("QUIZPATHSHALA_SHARED_DATA_DIR") or "").strip()
 _sibling_bot_database = (BASE_DIR.parent / "quiz_bot" / "data" / "quiz_bot_v2.db").resolve()
 
-if _shared_database_env:
-    DATABASE_PATH = Path(_shared_database_env).expanduser().resolve()
-elif _shared_data_dir_env:
-    DATABASE_PATH = (Path(_shared_data_dir_env).expanduser().resolve() / "quiz_bot_v2.db")
-elif _sibling_bot_database.exists():
-    DATABASE_PATH = _sibling_bot_database
+if DATABASE_URL:
+    DATABASE_BACKEND = "postgres"
+    DATABASE_PATH = None
+    DATABASE_DSN = DATABASE_URL
 else:
-    DATABASE_PATH = DATA_DIR / "quiz_bot_v2.db"
+    DATABASE_BACKEND = "sqlite"
+    if _db_path_env:
+        DATABASE_PATH = Path(_db_path_env).expanduser().resolve()
+    elif _legacy_shared_database_env:
+        DATABASE_PATH = Path(_legacy_shared_database_env).expanduser().resolve()
+    elif _legacy_shared_data_dir_env:
+        DATABASE_PATH = Path(_legacy_shared_data_dir_env).expanduser().resolve() / "quiz_bot_v2.db"
+    elif APP_ENV != "production" and _sibling_bot_database.exists():
+        DATABASE_PATH = _sibling_bot_database
+    else:
+        DATABASE_PATH = DATA_DIR / "quiz_bot_v2.db"
+    DATABASE_DSN = str(DATABASE_PATH)
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-SECRET_KEY = os.getenv("SECRET_KEY", "quizpathshala-web-secret")
+SECRET_KEY = (os.getenv("SECRET_KEY") or "quizpathshala-web-secret").strip()
 PORT = int(os.getenv("PORT", "10000"))
 DEFAULT_QUESTION_TIME = int(os.getenv("DEFAULT_QUESTION_TIME", "15"))
 FREE_DAILY_QUESTION_LIMIT = int(os.getenv("FREE_DAILY_QUESTION_LIMIT", "10"))
-APP_ENV = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development").strip().lower()
 
 SITE_NAME = "QuizPathshala"
 SITE_TAGLINE = "Online quiz preparation platform via Telegram bot"

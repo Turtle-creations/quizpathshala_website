@@ -1,9 +1,12 @@
 from flask import Flask, abort, send_file
 
 from config import (
+    APP_ENV,
     BASE_DIR,
     BOT_URL,
     CANONICAL_URL,
+    DATABASE_BACKEND,
+    DATABASE_DSN,
     PORT,
     SECRET_KEY,
     SITE_NAME,
@@ -24,6 +27,7 @@ from services.web_identity_service import web_identity_service
 from utils.logging_utils import get_logger, setup_logging
 
 
+setup_logging()
 logger = get_logger(__name__)
 MEDIA_ROOT = (BASE_DIR / "data").resolve()
 
@@ -37,8 +41,23 @@ def create_app() -> Flask:
     )
     app.config["SECRET_KEY"] = SECRET_KEY
 
-    database.initialize()
-    bootstrap_application()
+    if APP_ENV == "production" and SECRET_KEY == "quizpathshala-web-secret":
+        logger.warning("Production is using the default SECRET_KEY. Set SECRET_KEY in Render environment variables.")
+
+    logger.info(
+        "Initializing QuizPathshala app | env=%s database_backend=%s database_target=%s",
+        APP_ENV,
+        DATABASE_BACKEND,
+        DATABASE_DSN if DATABASE_BACKEND == "postgres" else "sqlite-local",
+    )
+
+    try:
+        database.initialize()
+        bootstrap_application()
+        logger.info("Database initialization complete")
+    except Exception:
+        logger.exception("Application startup failed during database initialization/bootstrap")
+        raise
 
     @app.context_processor
     def inject_site_context():
@@ -78,6 +97,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    setup_logging()
     logger.info("Starting QuizPathshala website on port %s", PORT)
     app.run(host="0.0.0.0", port=PORT)

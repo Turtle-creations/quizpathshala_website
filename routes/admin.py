@@ -139,6 +139,7 @@ def admin_dashboard():
         return redirect(url_for("admin.admin_dashboard", q=request.args.get("q", "")))
 
     dashboard = web_admin_service.dashboard_data()
+    dashboard.pop("question_search_results", None)
     search_query = (request.args.get("q") or "").strip()
     question_search_results = web_admin_service.search_questions(search_query) if search_query else []
     catalog = web_admin_service.catalog_for_admin()

@@ -6,6 +6,7 @@ from config import SUPER_ADMIN_EMAIL, SUPPORT_TELEGRAM
 from services.web_identity_service import web_identity_service
 from services.web_password_reset_service import web_password_reset_service
 from services.web_quiz_service import web_quiz_service
+from utils.logging_utils import get_logger
 
 
 auth_blueprint = Blueprint("auth", __name__)
@@ -14,6 +15,7 @@ RESET_TOKEN_SESSION_KEY = "password_reset_token"
 RESET_USER_ID_SESSION_KEY = "password_reset_user_id"
 RESET_EMAIL_SESSION_KEY = "password_reset_email"
 DEV_OTP_SESSION_KEY = "dev_password_reset_otp"
+logger = get_logger(__name__)
 
 
 def login_required(view_func):
@@ -89,34 +91,44 @@ def register():
 
 @auth_blueprint.route("/login", methods=["GET", "POST"])
 def login():
-    existing_user = web_identity_service.get_authenticated_user()
-    if existing_user:
-        if _is_admin_role(existing_user):
-            return redirect(url_for("admin.admin_dashboard"))
-        return redirect(url_for("auth.dashboard"))
+    try:
+        existing_user = web_identity_service.get_authenticated_user()
+        if existing_user:
+            if _is_admin_role(existing_user):
+                return redirect(url_for("admin.admin_dashboard"))
+            return redirect(url_for("auth.dashboard"))
 
-    if request.method == "POST":
-        login_identifier = request.form.get("login_identifier", "")
-        password = request.form.get("password", "")
-        user = web_identity_service.authenticate(login_identifier, password)
-        if not user:
-            flash("Invalid login credentials.", "error")
-            return redirect(url_for("auth.login"))
+        if request.method == "POST":
+            login_identifier = request.form.get("login_identifier", "")
+            password = request.form.get("password", "")
+            user = web_identity_service.authenticate(login_identifier, password)
+            if not user:
+                flash("Invalid login credentials.", "error")
+                return redirect(url_for("auth.login"))
 
-        web_identity_service.set_authenticated_user(user)
-        _clear_password_reset_session()
-        flash("Login successful.", "success")
-        if _is_admin_role(user):
-            return redirect(url_for("admin.admin_dashboard"))
-        return redirect(url_for("auth.dashboard"))
+            web_identity_service.set_authenticated_user(user)
+            _clear_password_reset_session()
+            flash("Login successful.", "success")
+            if _is_admin_role(user):
+                return redirect(url_for("admin.admin_dashboard"))
+            return redirect(url_for("auth.dashboard"))
 
-    return render_template(
-        "login.html",
-        page_title="Login",
-        support_telegram=SUPPORT_TELEGRAM,
-        super_admin_email=SUPER_ADMIN_EMAIL,
-        admin_authenticated=web_identity_service.is_admin_authenticated(),
-    )
+        return render_template(
+            "login.html",
+            page_title="Login",
+            support_telegram=SUPPORT_TELEGRAM,
+            super_admin_email=SUPER_ADMIN_EMAIL,
+            admin_authenticated=web_identity_service.is_admin_authenticated(),
+        )
+    except Exception:
+        logger.exception(
+            "Website login route failed | method=%s login_identifier=%s remote_addr=%s",
+            request.method,
+            (request.form.get("login_identifier", "") if request.method == "POST" else ""),
+            request.headers.get("X-Forwarded-For", request.remote_addr),
+        )
+        flash("Login is temporarily unavailable. Please try again shortly.", "error")
+        return redirect(url_for("auth.login"))
 
 
 @auth_blueprint.route("/forgot-password", methods=["GET", "POST"])

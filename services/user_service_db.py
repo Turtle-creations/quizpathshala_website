@@ -326,14 +326,7 @@ class UserService:
             )
 
     def admin_storage_ready(self) -> bool:
-        with database.connection() as conn:
-            row = conn.execute(
-                """
-                SELECT name FROM sqlite_master
-                WHERE type = 'table' AND name = 'users'
-                """
-            ).fetchone()
-        return bool(row)
+        return database.table_exists("users")
 
     def initialize_admin_storage(self):
         logger.info(
@@ -695,14 +688,7 @@ class UserService:
         return user
 
     def _users_table_has_integer_primary_key(self, conn) -> bool:
-        schema_rows = conn.execute("PRAGMA table_info(users)").fetchall()
-        for row in schema_rows:
-            column_name = row["name"] if hasattr(row, "keys") else row[1]
-            column_type = row["type"] if hasattr(row, "keys") else row[2]
-            is_primary_key = row["pk"] if hasattr(row, "keys") else row[5]
-            if column_name == "user_id" and int(is_primary_key or 0) == 1:
-                return str(column_type or "").strip().upper() == "INTEGER"
-        return False
+        return database.users_table_has_integer_primary_key(conn)
 
     def _normalize_login_identifier(self, value: str | None) -> str:
         raw = (value or "").strip()
