@@ -6,7 +6,7 @@
         <span class="eyebrow">Admin Panel</span>
         <h1>QuizPathshala management</h1>
         <p>Manage shared users, premium pricing, exams, sets, questions, and web support while the Telegram bot continues using the same database.</p>
-        <form accept-charset="UTF-8" method="post" action="{{ url_for('admin.admin_logout') }}">
+        <form accept-charset="UTF-8" method="post" action="{{ url_for('admin.admin_logout') }}" data-disable-on-submit="true">
             <button class="button button-secondary" type="submit">Log Out</button>
         </form>
     </div>
@@ -25,7 +25,7 @@
     <div class="container admin-grid">
         <div class="form-card">
             <h2>Update premium prices</h2>
-            <form method="post" accept-charset="UTF-8">
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="update_price">
                 <label for="plan_type">Plan</label>
                 <select id="plan_type" name="plan_type">
@@ -46,7 +46,7 @@
 
         <div class="form-card">
             <h2>Add exam</h2>
-            <form method="post" accept-charset="UTF-8">
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="add_exam">
                 <label for="exam_title">Exam title</label>
                 <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
@@ -58,7 +58,7 @@
 
         <div class="form-card">
             <h2>Add set</h2>
-            <form method="post" accept-charset="UTF-8">
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="add_set">
                 <label for="set_exam_id">Exam</label>
                 <select id="set_exam_id" name="exam_id">
@@ -76,49 +76,53 @@
         </div>
 
         <div class="form-card">
-            <h2>Add single question</h2>
-            <form method="post" accept-charset="UTF-8">
-                <input type="hidden" name="action" value="add_question">
-                <label for="question_exam_id">Exam</label>
-                <select id="question_exam_id" name="exam_id">
-                    {% for exam in exams %}
-                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
+            <h2>{{ 'Edit question' if editing_question else 'Add single question' }}</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="save_question">
+                <input type="hidden" name="question_id" value="{{ editing_question.question_id if editing_question else '' }}">
+                <label for="question_set_id">Set name</label>
+                <select id="question_set_id" name="set_id">
+                    {% for set_choice in set_choices %}
+                    <option value="{{ set_choice.set_id }}" {% if editing_question and editing_question.set_id == set_choice.set_id %}selected{% endif %}>{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
                     {% endfor %}
                 </select>
-                <label for="question_set_id">Set ID</label>
-                <input id="question_set_id" name="set_id" type="number" placeholder="1">
                 <label for="question_text">Question</label>
-                <textarea id="question_text" name="question_text" rows="4"></textarea>
-                <label>Option A</label><input name="option_a" type="text">
-                <label>Option B</label><input name="option_b" type="text">
-                <label>Option C</label><input name="option_c" type="text">
-                <label>Option D</label><input name="option_d" type="text">
+                <textarea id="question_text" name="question_text" rows="4">{{ editing_question.question_text if editing_question else '' }}</textarea>
+                <label for="option_a">Option A</label><input id="option_a" name="option_a" type="text" value="{{ editing_question.option_a if editing_question else '' }}">
+                <label for="option_b">Option B</label><input id="option_b" name="option_b" type="text" value="{{ editing_question.option_b if editing_question else '' }}">
+                <label for="option_c">Option C</label><input id="option_c" name="option_c" type="text" value="{{ editing_question.option_c if editing_question else '' }}">
+                <label for="option_d">Option D</label><input id="option_d" name="option_d" type="text" value="{{ editing_question.option_d if editing_question else '' }}">
                 <label for="correct_option">Correct option text</label>
-                <input id="correct_option" name="correct_option" type="text" placeholder="Option text, not A/B/C/D">
+                <input id="correct_option" name="correct_option" type="text" placeholder="Option text, not A/B/C/D" value="{{ editing_question.correct_option if editing_question else '' }}">
                 <label for="explanation">Explanation</label>
-                <textarea id="explanation" name="explanation" rows="3"></textarea>
+                <textarea id="explanation" name="explanation" rows="3">{{ editing_question.explanation if editing_question and editing_question.explanation else '' }}</textarea>
                 <label for="image_path">Image path (optional)</label>
-                <input id="image_path" name="image_path" type="text" placeholder="data/images/example.jpg">
+                <input id="image_path" name="image_path" type="text" placeholder="data/images/example.jpg" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
                 <label for="time_limit">Time limit in seconds</label>
-                <input id="time_limit" name="time_limit" type="number" min="1" placeholder="15">
-                <button class="button button-primary" type="submit">Add Question</button>
+                <input id="time_limit" name="time_limit" type="number" min="1" placeholder="15" value="{{ editing_question.time_limit if editing_question else '' }}">
+                <p class="helper-text">If the same question already exists in the selected set, the latest save will update that record instead of creating a duplicate.</p>
+                <div class="hero-actions">
+                    <button class="button button-primary" type="submit">{{ 'Update Question' if editing_question else 'Save Question' }}</button>
+                    {% if editing_question %}
+                    <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query) }}">Cancel Edit</a>
+                    {% endif %}
+                </div>
             </form>
         </div>
 
         <div class="form-card">
             <h2>Bulk upload questions</h2>
-            <form method="post" accept-charset="UTF-8">
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="bulk_import">
-                <label for="bulk_exam_id">Exam</label>
-                <select id="bulk_exam_id" name="exam_id">
-                    {% for exam in exams %}
-                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
+                <label for="bulk_set_id">Set name</label>
+                <select id="bulk_set_id" name="set_id">
+                    {% for set_choice in set_choices %}
+                    <option value="{{ set_choice.set_id }}">{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
                     {% endfor %}
                 </select>
-                <label for="bulk_set_id">Set ID</label>
-                <input id="bulk_set_id" name="set_id" type="number" placeholder="1">
                 <label for="bulk_payload">Pipe-separated rows</label>
                 <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg"></textarea>
+                <p class="helper-text">Duplicate questions in the same set will be replaced instead of saved twice.</p>
                 <button class="button button-primary" type="submit">Import Questions</button>
             </form>
         </div>
@@ -142,7 +146,7 @@
                         <td>{{ '%.2f'|format(user.score) }}</td>
                         <td>
                             {% if current_user.user_role == 'super_admin' and user.user_role != 'super_admin' %}
-                            <form method="post" accept-charset="UTF-8">
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                                 <input type="hidden" name="action" value="change_role">
                                 <input type="hidden" name="target_user_id" value="{{ user.user_id }}">
                                 <input type="hidden" name="target_role" value="{{ 'user' if user.user_role == 'admin' else 'admin' }}">
@@ -160,14 +164,14 @@
 
         <div class="data-card">
             <h2>Question search</h2>
-            <form accept-charset="UTF-8" method="get">
+            <form accept-charset="UTF-8" method="get" data-disable-on-submit="true">
                 <label for="question_search">Search by question text</label>
                 <input id="question_search" name="q" type="text" value="{{ search_query }}" placeholder="constitution, math, reasoning...">
                 <button class="button button-primary" type="submit">Search</button>
             </form>
             <table>
                 <thead>
-                    <tr><th>ID</th><th>Exam</th><th>Set</th><th>Question</th><th>Delete</th></tr>
+                    <tr><th>ID</th><th>Exam</th><th>Set</th><th>Question</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                     {% for item in question_search_results %}
@@ -177,11 +181,14 @@
                         <td>{{ item.set_title }}</td>
                         <td>{{ item.question_text }}</td>
                         <td>
-                            <form method="post" accept-charset="UTF-8">
-                                <input type="hidden" name="action" value="delete_question">
-                                <input type="hidden" name="question_id" value="{{ item.question_id }}">
-                                <button class="button button-secondary" type="submit">Delete</button>
-                            </form>
+                            <div class="table-actions">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query, edit_question_id=item.question_id) }}">Edit</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?">
+                                    <input type="hidden" name="action" value="delete_question">
+                                    <input type="hidden" name="question_id" value="{{ item.question_id }}">
+                                    <button class="button button-secondary" type="submit">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% else %}
@@ -199,13 +206,13 @@
             <h2>Exam, set, and question manager</h2>
             {% for exam in catalog %}
             <article class="info-card">
-                <div class="quiz-set-row">
+                <div class="quiz-set-row align-start">
                     <div>
                         <h3>{{ exam.title }}</h3>
                         <p>{{ exam.description or 'No description' }}</p>
                         <p>{{ exam.question_count }} questions across {{ exam.set_count }} sets</p>
                     </div>
-                    <form method="post" accept-charset="UTF-8">
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this exam and its sets/questions? Users and payment data will stay untouched.">
                         <input type="hidden" name="action" value="delete_exam">
                         <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
                         <button class="button button-secondary" type="submit">Delete Exam</button>
@@ -213,20 +220,20 @@
                 </div>
                 {% for set_item in exam.sets %}
                 <div class="catalog-card compact-card">
-                    <div class="quiz-set-row">
+                    <div class="quiz-set-row align-start">
                         <div>
                             <h4>{{ set_item.title }}</h4>
                             <p>{{ set_item.description or 'No description' }}</p>
-                            <p>Set ID {{ set_item.set_id }} | {{ set_item.question_count }} questions | {{ 'Premium' if set_item.is_premium_locked else 'Free' }}</p>
+                            <p>{{ set_item.question_count }} questions | {{ 'Premium' if set_item.is_premium_locked else 'Free' }}</p>
                         </div>
-                        <div class="hero-actions">
-                            <form method="post" accept-charset="UTF-8">
+                        <div class="hero-actions admin-actions-row">
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                                 <input type="hidden" name="action" value="toggle_set_lock">
                                 <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                                 <input type="hidden" name="lock_state" value="{{ 0 if set_item.is_premium_locked else 1 }}">
                                 <button class="button button-secondary" type="submit">{{ 'Make Free' if set_item.is_premium_locked else 'Make Premium' }}</button>
                             </form>
-                            <form method="post" accept-charset="UTF-8">
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this set and its questions? Users and payment data will stay untouched.">
                                 <input type="hidden" name="action" value="delete_set">
                                 <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                                 <button class="button button-secondary" type="submit">Delete Set</button>
@@ -235,20 +242,23 @@
                     </div>
                     <table>
                         <thead>
-                            <tr><th>ID</th><th>Question</th><th>Correct</th><th>Delete</th></tr>
+                            <tr><th>ID</th><th>Question</th><th>Correct</th><th>Actions</th></tr>
                         </thead>
                         <tbody>
-                            {% for question in set_item.questions[:10] %}
+                            {% for question in set_item.questions %}
                             <tr>
                                 <td>{{ question.question_id }}</td>
                                 <td>{{ question.question_text }}</td>
                                 <td>{{ question.correct_option }}</td>
                                 <td>
-                                    <form method="post" accept-charset="UTF-8">
-                                        <input type="hidden" name="action" value="delete_question">
-                                        <input type="hidden" name="question_id" value="{{ question.question_id }}">
-                                        <button class="button button-secondary" type="submit">Delete</button>
-                                    </form>
+                                    <div class="table-actions">
+                                        <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', edit_question_id=question.question_id) }}">Edit</a>
+                                        <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?">
+                                            <input type="hidden" name="action" value="delete_question">
+                                            <input type="hidden" name="question_id" value="{{ question.question_id }}">
+                                            <button class="button button-secondary" type="submit">Delete</button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                             {% else %}
@@ -333,4 +343,3 @@
     </div>
 </section>
 {% endblock %}
-

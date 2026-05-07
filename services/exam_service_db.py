@@ -22,7 +22,7 @@ def normalize_unicode_text(value: str | None) -> str | None:
     if not text:
         return text
 
-    suspicious_markers = ("\u00e0\u00a4", "\u00e0\u00a5", "\u00c3", "\u00c2", "\u00e2\u20ac", "\u00f0\u0178")
+    suspicious_markers = ("à¤", "à¥", "Ã", "Â", "â€", "ðŸ")
     if not any(marker in text for marker in suspicious_markers):
         return text
 
@@ -117,17 +117,7 @@ class ExamService:
 
         questions = []
         for row in rows:
-            item = self._normalize_question_record(dict(row))
-            item["options"] = [
-                item["option_a"],
-                item["option_b"],
-                item["option_c"],
-                item["option_d"],
-            ]
-            item["correct_option"] = self._normalize_stored_correct_answer(
-                item["options"],
-                item["correct_option"],
-            )
+            item = self._serialize_question_row(dict(row))
             questions.append(item)
 
         return questions
@@ -137,6 +127,30 @@ class ExamService:
             if field_name in item:
                 item[field_name] = normalize_unicode_text(item.get(field_name))
         return item
+
+    def _serialize_question_row(self, row: dict) -> dict:
+        item = self._normalize_question_record(dict(row))
+        item["options"] = [
+            item["option_a"],
+            item["option_b"],
+            item["option_c"],
+            item["option_d"],
+        ]
+        item["correct_option"] = self._normalize_stored_correct_answer(
+            item["options"],
+            item["correct_option"],
+        )
+        return item
+
+    def _clean_question_text(self, value: str | None) -> str:
+        return " ".join(str(value or "").strip().split())
+
+    def _build_question_match_key(self, value: str | None) -> str:
+        return self._clean_question_text(value).casefold()
+
+    def _coerce_time_limit(self, time_limit: int | None) -> int:
+        parsed = int(time_limit or DEFAULT_QUESTION_TIME)
+        return parsed if parsed > 0 else DEFAULT_QUESTION_TIME
 
     def add_exam(self, title: str, description: str | None = None):
         with database.connection() as conn:
@@ -195,6 +209,145 @@ class ExamService:
         self.invalidate_cache()
         return self.get_set(set_id)
 
+    def _find_duplicate_question_id(self, conn, *, set_id: int, question_text: str, exclude_question_id: int | None = None) -> int | None:
+        rows = conn.execute(
+            "SELECT question_id, question_text FROM questions WHERE set_id = ? ORDER BY question_id",
+            (set_id,),
+        ).fetchall()
+        match_key = self._build_question_match_key(question_text)
+        for row in rows:
+            row_question_id = int(row["question_id"])
+            if exclude_question_id is not None and row_question_id == exclude_question_id:
+                continue
+            if self._build_question_match_key(row["question_text"]) == match_key:
+                return row_question_id
+        return None
+
+    def save_question(
+        self,
+        *,
+        set_id: int,
+        question_text: str,
+        options: list[str],
+        correct_option: str,
+        explanation: str | None = None,
+        image_path: str | None = None,
+        time_limit: int | None = None,
+        question_id: int | None = None,
+    ) -> dict:
+        set_item = self.get_set(int(set_id))
+        if not set_item:
+            raise ValueError("Please select a valid set.")
+
+        cleaned_question_text = self._clean_question_text(question_text)
+        cleaned_options = self._normalize_options(options)
+        cleaned_correct_option = self._normalize_stored_correct_answer(cleaned_options, str(correct_option or "").strip())
+        cleaned_explanation = str(explanation).strip() if explanation else None
+        cleaned_image_path = str(image_path).strip() or None if image_path is not None else None
+        cleaned_time_limit = self._coerce_time_limit(time_limit)
+
+        if not cleaned_question_text:
+            raise ValueError("Question text is required.")
+
+        duplicate_action = "created"
+        with database.connection() as conn:
+            duplicate_question_id = self._find_duplicate_question_id(
+                conn,
+                set_id=int(set_id),
+                question_text=cleaned_question_text,
+                exclude_question_id=int(question_id) if question_id else None,
+            )
+            original_question_id = int(question_id) if question_id else None
+            target_question_id = original_question_id
+            question_id_to_delete_after_replace = None
+            if target_question_id is None and duplicate_question_id is not None:
+                target_question_id = duplicate_question_id
+                duplicate_action = "replaced"
+            elif target_question_id is not None and duplicate_question_id is not None:
+                target_question_id = duplicate_question_id
+                duplicate_action = "replaced"
+                if original_question_id != duplicate_question_id:
+                    question_id_to_delete_after_replace = original_question_id
+            elif target_question_id is not None:
+                duplicate_action = "updated"
+
+            if target_question_id is not None:
+                cursor = conn.execute(
+                    """
+                    UPDATE questions
+                    SET exam_id = ?,
+                        set_id = ?,
+                        question_text = ?,
+                        option_a = ?,
+                        option_b = ?,
+                        option_c = ?,
+                        option_d = ?,
+                        correct_option = ?,
+                        explanation = ?,
+                        image_path = ?,
+                        time_limit = ?
+                    WHERE question_id = ?
+                    """,
+                    (
+                        int(set_item["exam_id"]),
+                        int(set_id),
+                        cleaned_question_text,
+                        cleaned_options[0],
+                        cleaned_options[1],
+                        cleaned_options[2],
+                        cleaned_options[3],
+                        cleaned_correct_option,
+                        cleaned_explanation,
+                        cleaned_image_path,
+                        cleaned_time_limit,
+                        target_question_id,
+                    ),
+                )
+                if cursor.rowcount <= 0:
+                    raise ValueError("Question not found.")
+                if question_id_to_delete_after_replace is not None:
+                    conn.execute("DELETE FROM questions WHERE question_id = ?", (question_id_to_delete_after_replace,))
+                saved_question_id = target_question_id
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO questions (
+                        exam_id, set_id, question_text, option_a, option_b, option_c, option_d,
+                        correct_option, explanation, image_path, time_limit, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(set_item["exam_id"]),
+                        int(set_id),
+                        cleaned_question_text,
+                        cleaned_options[0],
+                        cleaned_options[1],
+                        cleaned_options[2],
+                        cleaned_options[3],
+                        cleaned_correct_option,
+                        cleaned_explanation,
+                        cleaned_image_path,
+                        cleaned_time_limit,
+                        timestamp(),
+                    ),
+                )
+                saved_question_id = int(cursor.lastrowid)
+
+        self.invalidate_cache()
+        saved_question = self.get_question(saved_question_id)
+        logger.info(
+            "Question save success | action=%s question_id=%s set_id=%s exam_id=%s",
+            duplicate_action,
+            saved_question_id,
+            set_id,
+            set_item["exam_id"],
+        )
+        return {
+            "row_id": saved_question_id,
+            "record": saved_question,
+            "operation": duplicate_action,
+        }
+
     def add_question(
         self,
         exam_id: int,
@@ -204,46 +357,40 @@ class ExamService:
         correct_option: str,
         image_path: str | None = None,
         time_limit: int | None = None,
+        explanation: str | None = None,
     ):
-        cleaned_question_text = str(question_text or "").strip()
-        cleaned_options = [str(option or "").strip() for option in options]
-        cleaned_correct_option = str(correct_option or "").strip()
-
-        with database.connection() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO questions (
-                    exam_id, set_id, question_text, option_a, option_b, option_c, option_d,
-                    correct_option, explanation, image_path, time_limit, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-                """,
-                (
-                    exam_id,
-                    set_id,
-                    cleaned_question_text,
-                    cleaned_options[0],
-                    cleaned_options[1],
-                    cleaned_options[2],
-                    cleaned_options[3],
-                    self._normalize_stored_correct_answer(cleaned_options, cleaned_correct_option),
-                    image_path,
-                    time_limit or DEFAULT_QUESTION_TIME,
-                    timestamp(),
-                ),
-            )
-            question_id = cursor.lastrowid
-        self.invalidate_cache()
-        created_question = self.get_question(question_id)
-        logger.info(
-            "Question insert success | question_id=%s exam_id=%s set_id=%s",
-            question_id,
-            exam_id,
-            set_id,
+        return self.save_question(
+            set_id=set_id,
+            question_text=question_text,
+            options=options,
+            correct_option=correct_option,
+            explanation=explanation,
+            image_path=image_path,
+            time_limit=time_limit,
         )
-        return {
-            "row_id": question_id,
-            "record": created_question,
-        }
+
+    def update_question(
+        self,
+        *,
+        question_id: int,
+        set_id: int,
+        question_text: str,
+        options: list[str],
+        correct_option: str,
+        explanation: str | None = None,
+        image_path: str | None = None,
+        time_limit: int | None = None,
+    ) -> dict:
+        return self.save_question(
+            question_id=question_id,
+            set_id=set_id,
+            question_text=question_text,
+            options=options,
+            correct_option=correct_option,
+            explanation=explanation,
+            image_path=image_path,
+            time_limit=time_limit,
+        )
 
     def get_exam(self, exam_id: int) -> dict | None:
         with database.connection() as conn:
@@ -267,8 +414,11 @@ class ExamService:
                 """
                 SELECT
                     q.question_id,
+                    q.exam_id,
+                    q.set_id,
                     q.question_text,
                     q.correct_option,
+                    q.explanation,
                     q.image_path,
                     q.time_limit,
                     s.title AS set_title,
@@ -287,25 +437,23 @@ class ExamService:
     def get_question(self, question_id: int) -> dict | None:
         with database.connection() as conn:
             row = conn.execute(
-                "SELECT * FROM questions WHERE question_id = ?",
+                """
+                SELECT
+                    q.*,
+                    s.title AS set_title,
+                    e.title AS exam_title
+                FROM questions q
+                JOIN exam_sets s ON s.set_id = q.set_id
+                JOIN exams e ON e.exam_id = q.exam_id
+                WHERE q.question_id = ?
+                """,
                 (question_id,),
             ).fetchone()
 
         if not row:
             return None
 
-        item = self._normalize_question_record(dict(row))
-        item["options"] = [
-            item["option_a"],
-            item["option_b"],
-            item["option_c"],
-            item["option_d"],
-        ]
-        item["correct_option"] = self._normalize_stored_correct_answer(
-            item["options"],
-            item["correct_option"],
-        )
-        return item
+        return self._serialize_question_row(dict(row))
 
     def migrate_correct_answers_to_text(self):
         with database.connection() as conn:
@@ -373,10 +521,10 @@ class ExamService:
                     )
 
     def _normalize_options(self, options: list[str]) -> list[str]:
-        items = list(options)[:4]
+        items = [str(item or "").strip() for item in list(options)[:4]]
         while len(items) < 4:
             items.append(f"Option {len(items) + 1}")
-        return [str(item).strip() for item in items]
+        return items
 
     def _resolve_correct_option(self, options: list[str], answer: str) -> str:
         normalized_options = self._normalize_options(options)
@@ -405,4 +553,3 @@ class ExamService:
 
 
 exam_service = ExamService()
-

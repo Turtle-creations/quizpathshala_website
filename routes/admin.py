@@ -537,6 +537,11 @@ def admin_dashboard():
 
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
+        current_query = (request.args.get("q") or "").strip()
+        redirect_values: dict[str, str | int] = {}
+        if current_query:
+            redirect_values["q"] = current_query
+
         try:
             if action == "update_price":
                 payment_service.update_premium_price(
@@ -558,30 +563,59 @@ def admin_dashboard():
                     is_premium_locked=bool(request.form.get("is_premium_locked")),
                 )
                 flash("Set added successfully.", "success")
-            elif action == "add_question":
-                web_admin_service.add_question(
-                    exam_id=int(request.form.get("exam_id", "0")),
-                    set_id=int(request.form.get("set_id", "0")),
-                    question_text=request.form.get("question_text", ""),
-                    options=[
-                        request.form.get("option_a", ""),
-                        request.form.get("option_b", ""),
-                        request.form.get("option_c", ""),
-                        request.form.get("option_d", ""),
-                    ],
-                    correct_option=request.form.get("correct_option", ""),
-                    explanation=request.form.get("explanation") or None,
-                    image_path=request.form.get("image_path") or None,
-                    time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+            elif action == "save_question":
+                question_id = int(request.form.get("question_id", "0") or "0") or None
+                question_result = (
+                    web_admin_service.update_question(
+                        question_id=question_id,
+                        set_id=int(request.form.get("set_id", "0")),
+                        question_text=request.form.get("question_text", ""),
+                        options=[
+                            request.form.get("option_a", ""),
+                            request.form.get("option_b", ""),
+                            request.form.get("option_c", ""),
+                            request.form.get("option_d", ""),
+                        ],
+                        correct_option=request.form.get("correct_option", ""),
+                        explanation=request.form.get("explanation") or None,
+                        image_path=request.form.get("image_path") or None,
+                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                    )
+                    if question_id
+                    else web_admin_service.add_question(
+                        set_id=int(request.form.get("set_id", "0")),
+                        question_text=request.form.get("question_text", ""),
+                        options=[
+                            request.form.get("option_a", ""),
+                            request.form.get("option_b", ""),
+                            request.form.get("option_c", ""),
+                            request.form.get("option_d", ""),
+                        ],
+                        correct_option=request.form.get("correct_option", ""),
+                        explanation=request.form.get("explanation") or None,
+                        image_path=request.form.get("image_path") or None,
+                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                    )
                 )
-                flash("Question added successfully.", "success")
+                operation = question_result.get("operation") or "saved"
+                if operation == "created":
+                    flash("Question saved successfully.", "success")
+                elif operation == "updated":
+                    flash("Question updated successfully.", "success")
+                else:
+                    flash("Duplicate question in this set was replaced with the latest version.", "success")
             elif action == "bulk_import":
                 created = web_admin_service.bulk_import_questions(
-                    exam_id=int(request.form.get("exam_id", "0")),
                     set_id=int(request.form.get("set_id", "0")),
                     raw_text=request.form.get("bulk_payload", ""),
                 )
-                flash(f"Bulk import completed: {len(created)} questions added.", "success")
+                replaced_count = sum(1 for item in created if item.get("operation") == "replaced")
+                created_count = sum(1 for item in created if item.get("operation") == "created")
+                updated_count = sum(1 for item in created if item.get("operation") == "updated")
+                flash(
+                    f"Bulk import completed: {created_count} created, {replaced_count} replaced, {updated_count} updated.",
+                    "success",
+                )
             elif action == "toggle_set_lock":
                 web_admin_service.set_set_lock(
                     set_id=int(request.form.get("set_id", "0")),
@@ -610,14 +644,22 @@ def admin_dashboard():
             else:
                 flash("Unknown admin action.", "error")
         except Exception as exc:
+            posted_question_id = int(request.form.get("question_id", "0") or "0")
+            if posted_question_id:
+                redirect_values["edit_question_id"] = posted_question_id
             flash(str(exc), "error")
-        return redirect(url_for("admin.admin_dashboard", q=request.args.get("q", "")))
+        return redirect(url_for("admin.admin_dashboard", **redirect_values))
 
     dashboard = web_admin_service.dashboard_data()
     dashboard.pop("question_search_results", None)
     search_query = (request.args.get("q") or "").strip()
     question_search_results = web_admin_service.search_questions(search_query) if search_query else []
     catalog = web_admin_service.catalog_for_admin()
+    edit_question_id_raw = (request.args.get("edit_question_id") or "").strip()
+    editing_question = None
+    if edit_question_id_raw.isdigit():
+        editing_question = web_admin_service.get_question(int(edit_question_id_raw))
+
     return render_template(
         "admin_dashboard.html",
         page_title="Admin Panel",
@@ -627,5 +669,6 @@ def admin_dashboard():
         search_query=search_query,
         question_search_results=question_search_results,
         catalog=catalog,
+        editing_question=editing_question,
         **dashboard,
     )

@@ -47,32 +47,22 @@
 <section class="section">
     <div class="container narrow">
         <div class="data-card">
-            <h2>Question-by-question review</h2>
-            {% for item in summary.review_items %}
+            <h2>Attempted question review</h2>
+            {% for item in attempted_review_items %}
             <article class="info-card">
                 <p><strong>Q{{ item.number }}.</strong> {{ item.question_text }}</p>
                 {% if item.image_path %}
                 <img class="question-image" src="{{ url_for('media_file', relative_path=item.image_path) }}" alt="Question illustration">
                 {% endif %}
-                <p><strong>Status:</strong>
-                    {% if item.action == 'skip' %}
-                    Skipped
-                    {% elif item.action == 'timeout' %}
-                    Timed out
-                    {% elif item.correct %}
-                    Correct
-                    {% else %}
-                    Wrong
-                    {% endif %}
-                </p>
                 <p><strong>Your answer:</strong> {{ item.selected_text or 'Not answered' }}</p>
                 <p><strong>Correct answer:</strong> {{ item.correct_answer }}</p>
+                <p><strong>Status:</strong> {{ 'Correct' if item.correct else 'Wrong' }}</p>
                 {% if item.explanation %}
                 <p><strong>Explanation:</strong> {{ item.explanation }}</p>
                 {% endif %}
             </article>
             {% else %}
-            <p>No review items were recorded for this attempt.</p>
+            <p>No attempted questions were recorded for this attempt.</p>
             {% endfor %}
         </div>
     </div>

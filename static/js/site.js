@@ -115,3 +115,28 @@ document.addEventListener("DOMContentLoaded", function () {
     setAnimationMetrics();
     processScroll();
 });
+
+
+document.addEventListener("DOMContentLoaded", function () {
+    var protectedForms = Array.prototype.slice.call(document.querySelectorAll("form[data-disable-on-submit='true']"));
+
+    protectedForms.forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+            var confirmMessage = form.getAttribute("data-confirm");
+            if (confirmMessage && !window.confirm(confirmMessage)) {
+                event.preventDefault();
+                return;
+            }
+
+            if (form.dataset.submitting === "true") {
+                event.preventDefault();
+                return;
+            }
+
+            form.dataset.submitting = "true";
+            Array.prototype.slice.call(form.querySelectorAll("button, input[type='submit']")).forEach(function (button) {
+                button.disabled = true;
+            });
+        });
+    });
+});

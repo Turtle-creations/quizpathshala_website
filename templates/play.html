@@ -22,18 +22,18 @@
             {% endif %}
 
             {% if not active_result %}
-            <form accept-charset="UTF-8" method="post" id="quiz-form">
+            <form accept-charset="UTF-8" method="post" id="quiz-form" data-quiz-answer-form="true" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="answer" id="quiz-action">
+                <input type="hidden" name="selected_option" value="" id="selected-option-input">
                 <div class="option-list">
                     {% for option in question.options %}
-                    <label class="option-item">
-                        <input type="radio" name="selected_option" value="{{ loop.index0 }}">
+                    <button class="option-button" type="button" data-option-index="{{ loop.index0 }}">
+                        <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
                         <span>{{ option.text }}</span>
-                    </label>
+                    </button>
                     {% endfor %}
                 </div>
                 <div class="hero-actions">
-                    <button class="button button-primary" type="submit">Submit Answer</button>
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='skip'">Skip</button>
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='submit'">Submit Quiz</button>
                 </div>
@@ -50,6 +50,20 @@
                 Wrong answer
                 {% endif %}
             </div>
+            <div class="option-list option-list-review">
+                {% for option in active_result.options %}
+                {% set is_correct = loop.index0 == active_result.correct_index %}
+                {% set is_selected = active_result.selected_index is not none and loop.index0 == active_result.selected_index %}
+                <div class="option-review{% if is_correct %} option-review-correct{% endif %}{% if is_selected and not is_correct %} option-review-selected-wrong{% endif %}{% if is_selected and is_correct %} option-review-selected-correct{% endif %}">
+                    <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
+                    <div>
+                        <strong>{{ option.text }}</strong>
+                        {% if is_correct %}<p>Correct answer</p>{% endif %}
+                        {% if is_selected and not is_correct %}<p>Your answer</p>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
             {% if active_result.selected_text %}
             <p><strong>Your answer:</strong> {{ active_result.selected_text }}</p>
             {% endif %}
@@ -57,30 +71,76 @@
             {% if active_result.explanation %}
             <p><strong>Explanation:</strong> {{ active_result.explanation }}</p>
             {% endif %}
-            <form accept-charset="UTF-8" method="post">
+            <form accept-charset="UTF-8" method="post" id="next-question-form" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="next">
                 <button class="button button-primary" type="submit">Next Question</button>
             </form>
+            <p class="helper-text">Moving to the next question automatically in 2 seconds.</p>
             {% endif %}
         </article>
     </div>
 </section>
 
-{% if not active_result %}
 <script>
-const timerNode = document.getElementById("timer-value");
-const formNode = document.getElementById("quiz-form");
-const actionNode = document.getElementById("quiz-action");
-let remaining = Number(timerNode.textContent || "0");
-const timer = setInterval(() => {
-    remaining -= 1;
-    timerNode.textContent = Math.max(remaining, 0);
-    if (remaining <= 0) {
-        clearInterval(timer);
-        actionNode.value = "timeout";
-        formNode.submit();
+document.addEventListener("DOMContentLoaded", function () {
+    var timerNode = document.getElementById("timer-value");
+    var quizForm = document.getElementById("quiz-form");
+    var nextForm = document.getElementById("next-question-form");
+
+    if (quizForm && timerNode) {
+        var actionNode = document.getElementById("quiz-action");
+        var selectedOptionNode = document.getElementById("selected-option-input");
+        var optionButtons = Array.prototype.slice.call(quizForm.querySelectorAll("[data-option-index]"));
+        var formButtons = Array.prototype.slice.call(quizForm.querySelectorAll("button"));
+        var remaining = Number(timerNode.textContent || "0");
+        var submitted = false;
+
+        function disableQuizControls() {
+            optionButtons.forEach(function (button) {
+                button.disabled = true;
+                button.classList.add("option-button-disabled");
+            });
+            formButtons.forEach(function (button) {
+                button.disabled = true;
+            });
+        }
+
+        function submitQuiz(action, selectedIndex) {
+            if (submitted) {
+                return;
+            }
+            submitted = true;
+            if (typeof selectedIndex === "number") {
+                selectedOptionNode.value = String(selectedIndex);
+            }
+            actionNode.value = action;
+            disableQuizControls();
+            quizForm.submit();
+        }
+
+        optionButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                var optionIndex = Number(button.getAttribute("data-option-index"));
+                button.classList.add("option-button-pending");
+                submitQuiz("answer", optionIndex);
+            });
+        });
+
+        var timer = setInterval(function () {
+            remaining -= 1;
+            timerNode.textContent = Math.max(remaining, 0);
+            if (remaining <= 0) {
+                clearInterval(timer);
+                submitQuiz("timeout");
+            }
+        }, 1000);
     }
-}, 1000);
+
+    if (nextForm) {
+        window.setTimeout(function () {
+            nextForm.submit();
+        }, 2000);
+    }
+});
 </script>
-{% endif %}
 {% endblock %}

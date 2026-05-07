@@ -68,23 +68,34 @@ def play():
                 flash("Please select a valid option.", "error")
                 return redirect(url_for("quiz.play"))
             result = web_quiz_service.answer_question(user["user_id"], selected_index, action="answer")
-            session["active_result"] = result
-        elif action == "skip":
-            session["active_result"] = web_quiz_service.answer_question(user["user_id"], None, action="skip")
-        elif action == "timeout":
-            session["active_result"] = web_quiz_service.answer_question(user["user_id"], None, action="timeout")
-        elif action == "next":
+            session["active_result"] = result or session.get("active_result")
+            return redirect(url_for("quiz.play"))
+
+        if action == "skip":
+            result = web_quiz_service.answer_question(user["user_id"], None, action="skip")
+            session["active_result"] = result or session.get("active_result")
+            return redirect(url_for("quiz.play"))
+
+        if action == "timeout":
+            result = web_quiz_service.answer_question(user["user_id"], None, action="timeout")
+            session["active_result"] = result or session.get("active_result")
+            return redirect(url_for("quiz.play"))
+
+        if action == "next":
             session["active_result"] = None
             if web_quiz_service.next_question(user["user_id"]):
                 return redirect(url_for("quiz.play"))
             summary = web_quiz_service.submit_quiz(user["user_id"], ended_reason="completed")
             session["last_quiz_result"] = summary
             return redirect(url_for("quiz.result"))
-        elif action == "submit":
+
+        if action == "submit":
             summary = web_quiz_service.submit_quiz(user["user_id"], ended_reason="submitted")
             session["last_quiz_result"] = summary
             session["active_result"] = None
             return redirect(url_for("quiz.result"))
+
+        return redirect(url_for("quiz.play"))
 
     question = web_quiz_service.get_current_question(user["user_id"])
     if not question:
@@ -119,6 +130,7 @@ def result():
 
     set_item = exam_service.get_set(summary["set_id"]) if summary.get("set_id") else None
     performance = web_quiz_service.user_performance_snapshot(user["user_id"], limit=5)
+    attempted_review_items = [item for item in summary.get("review_items", []) if item.get("action") == "answer"]
     return render_template(
         "result.html",
         page_title="Quiz Result",
@@ -126,5 +138,6 @@ def result():
         summary=summary,
         current_set=set_item,
         performance=performance,
+        attempted_review_items=attempted_review_items,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )

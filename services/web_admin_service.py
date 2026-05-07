@@ -16,6 +16,7 @@ class WebAdminService:
         exams = exam_service.get_exams()
         admins = [user for user in users if user.get("user_role") in {"admin", "super_admin"} or user.get("is_admin")]
         non_admins = [user for user in users if user not in admins]
+        set_choices = self.list_set_choices()
         return {
             "users": users,
             "payments": payments,
@@ -25,6 +26,7 @@ class WebAdminService:
             "admins": admins,
             "non_admins": non_admins,
             "exams": exams,
+            "set_choices": set_choices,
             "question_search_results": [],
             "dashboard_counts": {
                 "total_users": len(users),
@@ -51,6 +53,23 @@ class WebAdminService:
     def create_support_ticket(self, user: dict, message_text: str) -> int:
         return support_service.create_ticket(user, message_text)
 
+    def list_set_choices(self) -> list[dict]:
+        choices: list[dict] = []
+        for exam in exam_service.get_exams():
+            for set_item in exam_service.get_sets(int(exam["exam_id"])):
+                choices.append(
+                    {
+                        "exam_id": int(exam["exam_id"]),
+                        "exam_title": exam["title"],
+                        "set_id": int(set_item["set_id"]),
+                        "set_title": set_item["title"],
+                        "label": f"{exam['title']} - {set_item['title']}",
+                        "is_premium_locked": bool(int(set_item.get("is_premium_locked", 0))),
+                        "question_count": int(set_item.get("question_count") or 0),
+                    }
+                )
+        return choices
+
     def catalog_for_admin(self) -> list[dict]:
         exams = exam_service.get_exams()
         exam_map = {exam["exam_id"]: {**exam, "sets": []} for exam in exams}
@@ -73,8 +92,11 @@ class WebAdminService:
             ).fetchall()
             question_rows = conn.execute(
                 """
-                SELECT *
-                FROM questions
+                SELECT
+                    q.*, e.title AS exam_title, s.title AS set_title
+                FROM questions q
+                JOIN exams e ON e.exam_id = q.exam_id
+                JOIN exam_sets s ON s.set_id = q.set_id
                 ORDER BY set_id, question_id DESC
                 """
             ).fetchall()
@@ -83,9 +105,9 @@ class WebAdminService:
         for row in question_rows:
             set_id = int(row["set_id"])
             bucket = questions_by_set.setdefault(set_id, [])
-            if len(bucket) >= 200:
+            if len(bucket) >= 25:
                 continue
-            bucket.append(exam_service._normalize_question_record(dict(row)))
+            bucket.append(exam_service._serialize_question_row(dict(row)))
 
         for row in set_rows:
             set_item = dict(row)
@@ -107,7 +129,7 @@ class WebAdminService:
                 """,
                 (set_id, limit),
             ).fetchall()
-        return [exam_service._normalize_question_record(dict(row)) for row in rows]
+        return [exam_service._serialize_question_row(dict(row)) for row in rows]
 
     def add_exam(self, title: str, description: str | None = None) -> dict:
         return exam_service.add_exam(title, description)
@@ -120,7 +142,6 @@ class WebAdminService:
     def add_question(
         self,
         *,
-        exam_id: int,
         set_id: int,
         question_text: str,
         options: list[str],
@@ -129,26 +150,40 @@ class WebAdminService:
         image_path: str | None = None,
         time_limit: int | None = None,
     ) -> dict:
-        result = exam_service.add_question(
-            exam_id=exam_id,
+        return exam_service.save_question(
             set_id=set_id,
             question_text=question_text,
             options=options,
             correct_option=correct_option,
+            explanation=explanation,
             image_path=image_path,
             time_limit=time_limit,
         )
-        if explanation:
-            with database.connection() as conn:
-                conn.execute(
-                    "UPDATE questions SET explanation = ? WHERE question_id = ?",
-                    (str(explanation).strip(), result["row_id"]),
-                )
-            exam_service.invalidate_cache()
-            result["record"] = exam_service.get_question(result["row_id"])
-        return result
 
-    def bulk_import_questions(self, *, exam_id: int, set_id: int, raw_text: str) -> list[dict]:
+    def update_question(
+        self,
+        *,
+        question_id: int,
+        set_id: int,
+        question_text: str,
+        options: list[str],
+        correct_option: str,
+        explanation: str | None = None,
+        image_path: str | None = None,
+        time_limit: int | None = None,
+    ) -> dict:
+        return exam_service.update_question(
+            question_id=question_id,
+            set_id=set_id,
+            question_text=question_text,
+            options=options,
+            correct_option=correct_option,
+            explanation=explanation,
+            image_path=image_path,
+            time_limit=time_limit,
+        )
+
+    def bulk_import_questions(self, *, set_id: int, raw_text: str) -> list[dict]:
         created = []
         for line_number, line in enumerate(raw_text.splitlines(), start=1):
             cleaned = line.strip()
@@ -166,7 +201,6 @@ class WebAdminService:
             image_path = rest[2] if len(rest) >= 3 and rest[2] else None
             created.append(
                 self.add_question(
-                    exam_id=exam_id,
                     set_id=set_id,
                     question_text=question_text,
                     options=[option_a, option_b, option_c, option_d],
@@ -194,6 +228,9 @@ class WebAdminService:
         if not (search_text or "").strip():
             return []
         return exam_service.find_questions_by_text(search_text, limit=limit)
+
+    def get_question(self, question_id: int) -> dict | None:
+        return exam_service.get_question(question_id)
 
     def change_user_role(self, target_user_id: int, role: str) -> tuple[dict | None, str]:
         normalized_role = (role or "").strip().lower()
