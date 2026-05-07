@@ -14,20 +14,22 @@ class WebAdminService:
         payments = web_payment_service.list_payments()
         orders = web_payment_service.list_orders()
         exams = exam_service.get_exams()
+        admins = [user for user in users if user.get("user_role") in {"admin", "super_admin"} or user.get("is_admin")]
+        non_admins = [user for user in users if user not in admins]
         return {
             "users": users,
             "payments": payments,
             "orders": orders,
             "premium_prices": payment_service.list_premium_prices(),
             "support_tickets": self.list_support_tickets(),
-            "admins": user_service.list_admins(),
-            "non_admins": user_service.list_non_admins(),
+            "admins": admins,
+            "non_admins": non_admins,
             "exams": exams,
             "question_search_results": [],
             "dashboard_counts": {
                 "total_users": len(users),
                 "premium_users": sum(1 for user in users if user.get("is_premium")),
-                "admin_users": sum(1 for user in users if user.get("user_role") in {"admin", "super_admin"} or user.get("is_admin")),
+                "admin_users": len(admins),
                 "exam_count": len(exams),
                 "question_count": sum(int(exam.get("question_count") or 0) for exam in exams),
                 "payment_count": len(payments),
@@ -50,18 +52,49 @@ class WebAdminService:
         return support_service.create_ticket(user, message_text)
 
     def catalog_for_admin(self) -> list[dict]:
-        catalog = []
-        for exam in exam_service.get_exams():
-            sets = []
-            for set_item in exam_service.get_sets(exam["exam_id"]):
-                sets.append(
-                    {
-                        **set_item,
-                        "questions": self.list_questions_for_set(set_item["set_id"], limit=200),
-                    }
-                )
-            catalog.append({**exam, "sets": sets})
-        return catalog
+        exams = exam_service.get_exams()
+        exam_map = {exam["exam_id"]: {**exam, "sets": []} for exam in exams}
+
+        with database.connection() as conn:
+            set_rows = conn.execute(
+                """
+                SELECT
+                    s.set_id,
+                    s.exam_id,
+                    s.title,
+                    s.description,
+                    s.is_premium_locked,
+                    COUNT(q.question_id) AS question_count
+                FROM exam_sets s
+                LEFT JOIN questions q ON q.set_id = s.set_id
+                GROUP BY s.set_id
+                ORDER BY s.exam_id, s.title
+                """
+            ).fetchall()
+            question_rows = conn.execute(
+                """
+                SELECT *
+                FROM questions
+                ORDER BY set_id, question_id DESC
+                """
+            ).fetchall()
+
+        questions_by_set: dict[int, list[dict]] = {}
+        for row in question_rows:
+            set_id = int(row["set_id"])
+            bucket = questions_by_set.setdefault(set_id, [])
+            if len(bucket) >= 200:
+                continue
+            bucket.append(exam_service._normalize_question_record(dict(row)))
+
+        for row in set_rows:
+            set_item = dict(row)
+            set_item["questions"] = questions_by_set.get(int(set_item["set_id"]), [])
+            exam_entry = exam_map.get(int(set_item["exam_id"]))
+            if exam_entry is not None:
+                exam_entry["sets"].append(set_item)
+
+        return list(exam_map.values())
 
     def list_questions_for_set(self, set_id: int, limit: int = 100) -> list[dict]:
         with database.connection() as conn:

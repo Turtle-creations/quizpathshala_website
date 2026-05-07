@@ -19,11 +19,13 @@ class WebQuizService:
 
     def list_exam_catalog(self, user_id: int) -> list[dict]:
         catalog = []
+        premium_active = premium_service.is_premium(user_id)
+        admin_access = user_service.is_admin(user_id)
         for exam in exam_service.get_exams():
             sets = []
             for set_item in exam_service.get_sets(exam["exam_id"]):
                 locked = bool(int(set_item.get("is_premium_locked", 0)))
-                has_access = (not locked) or premium_service.is_premium(user_id) or user_service.is_admin(user_id)
+                has_access = (not locked) or premium_active or admin_access
                 sets.append(
                     {
                         **set_item,
@@ -43,7 +45,12 @@ class WebQuizService:
         return premium_service.is_premium(user_id) or user_service.is_admin(user_id)
 
     def start_quiz(self, user_id: int, set_id: int, requested_count: int) -> tuple[dict | None, str | None]:
-        if not self.can_access_set(user_id, set_id):
+        set_item = exam_service.get_set(set_id)
+        if not set_item:
+            return None, "This quiz set is not available."
+
+        locked = bool(int(set_item.get("is_premium_locked", 0)))
+        if locked and not (premium_service.is_premium(user_id) or user_service.is_admin(user_id)):
             return None, "This quiz set is premium-only."
         if int(requested_count) not in self.QUIZ_COUNT_OPTIONS:
             return None, "Please choose 20, 50, or 100 questions."
@@ -55,7 +62,6 @@ class WebQuizService:
         actual_count = min(max(int(requested_count), 1), len(question_pool), self.MAX_QUESTIONS_PER_QUIZ)
         random.shuffle(question_pool)
         questions = question_pool[:actual_count]
-        set_item = exam_service.get_set(set_id) or {}
 
         self.sessions[user_id] = {
             "set_id": set_id,

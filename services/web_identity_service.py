@@ -1,6 +1,6 @@
 import random
 
-from flask import session
+from flask import g, has_request_context, session
 
 from config import ADMIN_LOGIN_IDENTIFIER
 from services.user_service_db import user_service
@@ -11,6 +11,8 @@ class WebIdentityService:
     AUTH_USER_KEY = "auth_user_id"
     ROLE_KEY = "auth_role"
     ADMIN_KEY = "admin_authenticated"
+    _AUTH_CACHE_KEY = "_web_identity_authenticated_user"
+    _CACHE_MISS = object()
 
     def get_or_create_user(self) -> dict:
         authenticated = self.get_authenticated_user()
@@ -54,6 +56,7 @@ class WebIdentityService:
             session[self.ADMIN_KEY] = True
         else:
             session.pop(self.ADMIN_KEY, None)
+        self._set_cached_authenticated_user(dict(user))
 
     def authenticate(self, login_identifier: str, password: str) -> dict:
         return user_service.authenticate_web_user(login_identifier, password)
@@ -69,13 +72,20 @@ class WebIdentityService:
     def get_authenticated_user(self) -> dict:
         user_id = session.get(self.AUTH_USER_KEY)
         if not user_id:
+            self._set_cached_authenticated_user({})
             return {}
+
+        cached_user = self._get_cached_authenticated_user()
+        if cached_user is not self._CACHE_MISS:
+            return dict(cached_user) if cached_user else {}
 
         user = user_service.get_user(int(user_id))
         if not user:
             self.logout_user()
             return {}
-        return user
+
+        self._set_cached_authenticated_user(user)
+        return dict(user)
 
     def is_authenticated(self) -> bool:
         return bool(self.get_authenticated_user())
@@ -94,6 +104,7 @@ class WebIdentityService:
             session[self.ADMIN_KEY] = True
 
     def logout_user(self) -> None:
+        self._clear_cached_authenticated_user()
         session.pop(self.AUTH_USER_KEY, None)
         session.pop(self.ROLE_KEY, None)
         session.pop(self.ADMIN_KEY, None)
@@ -107,6 +118,19 @@ class WebIdentityService:
         user = self.get_authenticated_user()
         role = user.get("user_role") if user else session.get(self.ROLE_KEY)
         return bool(user and (self._is_privileged_role(role) or user.get("is_admin"))) or bool(session.get(self.ADMIN_KEY))
+
+    def _get_cached_authenticated_user(self):
+        if not has_request_context():
+            return self._CACHE_MISS
+        return getattr(g, self._AUTH_CACHE_KEY, self._CACHE_MISS)
+
+    def _set_cached_authenticated_user(self, user: dict) -> None:
+        if has_request_context():
+            setattr(g, self._AUTH_CACHE_KEY, dict(user) if user else {})
+
+    def _clear_cached_authenticated_user(self) -> None:
+        if has_request_context() and hasattr(g, self._AUTH_CACHE_KEY):
+            delattr(g, self._AUTH_CACHE_KEY)
 
     def _generate_user_id(self) -> int:
         return random.randint(7000000000, 7999999999)

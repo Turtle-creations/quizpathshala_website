@@ -258,7 +258,6 @@ class PaymentService:
         status: str,
         payment_url: str,
     ):
-        database.initialize()
         with database.connection() as conn:
             conn.execute(
                 """

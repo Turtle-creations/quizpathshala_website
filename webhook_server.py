@@ -1,4 +1,4 @@
-from flask import Flask, abort, send_file
+from flask import Flask, abort, request, send_file
 
 from config import (
     APP_ENV,
@@ -42,6 +42,7 @@ def create_app() -> Flask:
     )
     app.config["SECRET_KEY"] = SECRET_KEY
     app.config["JSON_AS_ASCII"] = False
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400
     app.json.ensure_ascii = False
 
     if APP_ENV == "production" and SECRET_KEY == "quizpathshala-web-secret":
@@ -67,11 +68,21 @@ def create_app() -> Flask:
     def ensure_utf8_response(response):
         if response.mimetype in {"text/html", "application/json", "text/plain", "application/javascript", "text/javascript"}:
             response.headers["Content-Type"] = f"{response.mimetype}; charset=utf-8"
+
+        if request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=86400"
+        elif request.path.startswith("/media/"):
+            response.headers["Cache-Control"] = "public, max-age=3600"
+
         return response
 
     @app.context_processor
     def inject_site_context():
         current_user = web_identity_service.get_authenticated_user()
+        current_role = current_user.get("user_role") if current_user else ""
+        admin_authenticated = bool(
+            current_user and (current_role in {"admin", "super_admin"} or current_user.get("is_admin"))
+        ) or web_identity_service.is_admin_authenticated()
         return {
             "site_name": SITE_NAME,
             "tagline": SITE_TAGLINE,
@@ -81,8 +92,8 @@ def create_app() -> Flask:
             "canonical_url": CANONICAL_URL,
             "current_user": current_user,
             "is_authenticated": bool(current_user),
-            "current_role": current_user.get("user_role") if current_user else "",
-            "admin_authenticated": web_identity_service.is_admin_authenticated(),
+            "current_role": current_role,
+            "admin_authenticated": admin_authenticated,
         }
 
     app.register_blueprint(auth_blueprint)
@@ -98,7 +109,7 @@ def create_app() -> Flask:
             abort(404)
         if MEDIA_ROOT not in requested.parents:
             abort(404)
-        return send_file(requested)
+        return send_file(requested, conditional=True, max_age=3600)
 
     return app
 

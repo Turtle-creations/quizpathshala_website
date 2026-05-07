@@ -88,6 +88,7 @@ class Database:
     def __init__(self, backend: str, dsn: str):
         self.backend = backend
         self.dsn = dsn
+        self._initialized = False
 
     @property
     def is_sqlite(self) -> bool:
@@ -98,6 +99,9 @@ class Database:
         return self.backend == "postgres"
 
     def initialize(self):
+        if self._initialized:
+            return
+
         if self.is_sqlite:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -147,6 +151,43 @@ class Database:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_password_reset_user_created ON password_reset_requests(user_id, created_at DESC)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_phone_number ON users(phone_number)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_questions_set_question ON questions(set_id, question_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_questions_exam_set ON questions(exam_id, set_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exam_sets_exam_id ON exam_sets(exam_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_created ON quiz_attempts(user_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payment_orders_status_created ON payment_orders(status, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payments_user_timestamp ON payments(user_id, timestamp DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_processed_webhooks_payment_id ON processed_webhooks(payment_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_processed_webhooks_order_id ON processed_webhooks(order_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_support_messages_created_at ON support_messages(created_at DESC)"
+            )
+        self._initialized = True
 
     @contextmanager
     def connection(self):
