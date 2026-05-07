@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from functools import wraps
 import hmac
+import re
 import uuid
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
@@ -16,6 +17,7 @@ from utils.logging_utils import get_logger
 admin_blueprint = Blueprint("admin", __name__)
 logger = get_logger(__name__)
 _MOJIBAKE_MARKERS = ("\u00e0\u00a4", "\u00e0\u00a5")
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 _MOJIBAKE_FIELDS = (
     "question_text",
     "option_a",
@@ -51,8 +53,89 @@ def _contains_mojibake(value) -> bool:
     return isinstance(value, str) and any(marker in value for marker in _MOJIBAKE_MARKERS)
 
 
-def _repair_mojibake_text(value: str) -> str:
-    return value.encode("latin1").decode("utf-8")
+def _contains_devanagari(value) -> bool:
+    return isinstance(value, str) and bool(_DEVANAGARI_RE.search(value))
+
+
+def _safe_preview(value, limit: int = 120) -> str:
+    if value is None:
+        return "<none>"
+    preview = str(value).replace("\n", "\\n")
+    if len(preview) > limit:
+        preview = preview[: limit - 3] + "..."
+    return preview.encode("unicode_escape", errors="backslashreplace").decode("ascii")
+
+
+def _decode_with(value: str, source_encoding: str) -> str | None:
+    try:
+        return value.encode(source_encoding).decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return None
+
+
+def _iter_repair_candidates(value: str):
+    seen = {value}
+    for source_encoding in ("latin1", "cp1252"):
+        candidate = _decode_with(value, source_encoding)
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            yield f"{source_encoding}->utf8", candidate
+
+            if _contains_mojibake(candidate):
+                second_pass = _decode_with(candidate, source_encoding)
+                if second_pass and second_pass not in seen:
+                    seen.add(second_pass)
+                    yield f"{source_encoding}->utf8 twice", second_pass
+
+    # Conservative ftfy-style fallback: try both common Western byte interpretations and
+    # only consider results that clearly improve into Devanagari text.
+    latin1_then_cp1252 = _decode_with(value, "latin1")
+    if latin1_then_cp1252 and _contains_mojibake(latin1_then_cp1252):
+        candidate = _decode_with(latin1_then_cp1252, "cp1252")
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            yield "latin1->utf8 then cp1252->utf8", candidate
+
+    cp1252_then_latin1 = _decode_with(value, "cp1252")
+    if cp1252_then_latin1 and _contains_mojibake(cp1252_then_latin1):
+        candidate = _decode_with(cp1252_then_latin1, "latin1")
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            yield "cp1252->utf8 then latin1->utf8", candidate
+
+
+def _score_candidate(original: str, candidate: str) -> tuple[int, int, int, int]:
+    devanagari_count = sum(1 for char in candidate if _DEVANAGARI_RE.match(char))
+    mojibake_count = sum(candidate.count(marker) for marker in _MOJIBAKE_MARKERS)
+    original_devanagari_count = sum(1 for char in original if _DEVANAGARI_RE.match(char))
+    return (
+        devanagari_count,
+        -mojibake_count,
+        len(candidate) - abs(len(candidate) - len(original)),
+        devanagari_count - original_devanagari_count,
+    )
+
+
+def _repair_mojibake_text(value: str) -> tuple[str | None, str | None]:
+    best_text = None
+    best_method = None
+    best_score = None
+
+    for method, candidate in _iter_repair_candidates(value):
+        if candidate == value:
+            continue
+        if not _contains_devanagari(candidate):
+            continue
+        if _contains_mojibake(candidate):
+            continue
+
+        score = _score_candidate(value, candidate)
+        if best_score is None or score > best_score:
+            best_text = candidate
+            best_method = method
+            best_score = score
+
+    return best_text, best_method
 
 
 def _ensure_mojibake_backup_table(conn) -> None:
@@ -125,26 +208,43 @@ def _backup_question_rows(conn, *, batch_id: str, rows: list[dict]) -> int:
     return backup_count
 
 
-def _build_question_changes(row: dict) -> dict[str, str]:
+def _build_question_changes(row: dict) -> tuple[dict[str, str], list[dict[str, str]]]:
     changes: dict[str, str] = {}
+    previews: list[dict[str, str]] = []
+
     for field_name in _MOJIBAKE_FIELDS:
         value = row.get(field_name)
         if not _contains_mojibake(value):
             continue
-        try:
-            repaired = _repair_mojibake_text(value)
-        except (UnicodeEncodeError, UnicodeDecodeError):
+
+        repaired, method = _repair_mojibake_text(value)
+        if not repaired or repaired == value:
+            logger.info(
+                "Mojibake repair skipped | question_id=%s field=%s reason=no_valid_devanagari_candidate before=%s",
+                row.get("question_id"),
+                field_name,
+                _safe_preview(value),
+            )
             continue
-        if repaired != value:
-            changes[field_name] = repaired
-    return changes
+
+        changes[field_name] = repaired
+        previews.append(
+            {
+                "field": field_name,
+                "method": method or "unknown",
+                "before": _safe_preview(value),
+                "after": _safe_preview(repaired),
+            }
+        )
+
+    return changes, previews
 
 
 def _apply_mojibake_repairs(conn, rows: list[dict]) -> tuple[int, int]:
     updated_rows = 0
     updated_fields = 0
     for row in rows:
-        changes = _build_question_changes(row)
+        changes, previews = _build_question_changes(row)
         if not changes:
             continue
 
@@ -157,6 +257,16 @@ def _apply_mojibake_repairs(conn, rows: list[dict]) -> tuple[int, int]:
         )
         updated_rows += 1
         updated_fields += len(changes)
+
+        for preview in previews:
+            logger.info(
+                "Mojibake repair field updated | question_id=%s field=%s method=%s before=%s after=%s",
+                row.get("question_id"),
+                preview["field"],
+                preview["method"],
+                preview["before"],
+                preview["after"],
+            )
 
     return updated_rows, updated_fields
 
