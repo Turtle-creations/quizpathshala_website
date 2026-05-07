@@ -33,7 +33,7 @@
                     <p>{{ "7 days" if item.key == "week_1" else "30 days" if item.key == "month_1" else "90 days" }}</p>
                     <p>Secure website checkout through Razorpay.</p>
                     {% if payment_ready %}
-                    <form method="post">
+                    <form accept-charset="UTF-8" method="post">
                         <input type="hidden" name="plan_type" value="{{ item.key }}">
                         <button class="button button-primary" type="submit">Buy Now</button>
                     </form>

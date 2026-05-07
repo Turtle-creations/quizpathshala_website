@@ -8,6 +8,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 
 from config import ADMIN_PASSWORD, SECRET_KEY, SUPPORT_TELEGRAM
 from db.database import database
+from services.exam_service_db import exam_service
 from services.payment_service_db import payment_service
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
@@ -29,6 +30,7 @@ _MOJIBAKE_FIELDS = (
     "explanation",
 )
 _BACKUP_TABLE = "mojibake_question_backups"
+_QUESTION_PURGE_BACKUP_TABLE = "question_cleanup_backups"
 
 
 def admin_required(view_func):
@@ -174,6 +176,100 @@ def _repair_mojibake_text(value: str) -> tuple[str | None, str | None, list[dict
         return segment_repaired, "segment_repair", segment_previews
 
     return None, None, segment_previews
+
+
+def _ensure_question_cleanup_backup_table(conn) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_QUESTION_PURGE_BACKUP_TABLE} (
+            backup_id TEXT PRIMARY KEY,
+            batch_id TEXT NOT NULL,
+            question_id BIGINT NOT NULL,
+            exam_id BIGINT,
+            set_id BIGINT,
+            question_text TEXT,
+            option_a TEXT,
+            option_b TEXT,
+            option_c TEXT,
+            option_d TEXT,
+            correct_option TEXT,
+            explanation TEXT,
+            image_path TEXT,
+            time_limit INTEGER,
+            question_created_at TEXT,
+            archived_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{_QUESTION_PURGE_BACKUP_TABLE}_batch_id ON {_QUESTION_PURGE_BACKUP_TABLE}(batch_id)"
+    )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{_QUESTION_PURGE_BACKUP_TABLE}_question_id ON {_QUESTION_PURGE_BACKUP_TABLE}(question_id)"
+    )
+
+
+def _fetch_all_question_rows(conn) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT
+            question_id,
+            exam_id,
+            set_id,
+            question_text,
+            option_a,
+            option_b,
+            option_c,
+            option_d,
+            correct_option,
+            explanation,
+            image_path,
+            time_limit,
+            created_at
+        FROM questions
+        ORDER BY question_id
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _backup_all_questions(conn, *, batch_id: str, rows: list[dict]) -> int:
+    archived_at = _utc_now_iso()
+    backup_count = 0
+    for row in rows:
+        conn.execute(
+            f"""
+            INSERT INTO {_QUESTION_PURGE_BACKUP_TABLE} (
+                backup_id, batch_id, question_id, exam_id, set_id, question_text, option_a, option_b,
+                option_c, option_d, correct_option, explanation, image_path, time_limit, question_created_at, archived_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                batch_id,
+                row["question_id"],
+                row.get("exam_id"),
+                row.get("set_id"),
+                row.get("question_text"),
+                row.get("option_a"),
+                row.get("option_b"),
+                row.get("option_c"),
+                row.get("option_d"),
+                row.get("correct_option"),
+                row.get("explanation"),
+                row.get("image_path"),
+                row.get("time_limit"),
+                row.get("created_at"),
+                archived_at,
+            ),
+        )
+        backup_count += 1
+    return backup_count
+
+
+def _delete_all_questions(conn) -> int:
+    cursor = conn.execute("DELETE FROM questions")
+    return max(int(cursor.rowcount or 0), 0)
 
 
 def _ensure_mojibake_backup_table(conn) -> None:
@@ -388,6 +484,49 @@ def repair_mojibake():
         )
     except Exception as exc:
         logger.exception("Mojibake repair failed | batch_id=%s", batch_id)
+        return jsonify({"ok": False, "batch_id": batch_id, "error": str(exc)}), 500
+
+
+@admin_blueprint.route("/admin/cleanup-questions", methods=["GET"])
+def cleanup_questions():
+    token = request.args.get("token", "")
+    if not token or not hmac.compare_digest(token, SECRET_KEY):
+        logger.warning(
+            "Question cleanup denied | remote_addr=%s reason=invalid_token",
+            request.headers.get("X-Forwarded-For", request.remote_addr),
+        )
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    batch_id = f"question-cleanup-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    logger.warning("Question cleanup started | batch_id=%s action=backup_then_delete_questions_only", batch_id)
+
+    try:
+        with database.connection() as conn:
+            _ensure_question_cleanup_backup_table(conn)
+            question_rows = _fetch_all_question_rows(conn)
+            backup_rows = _backup_all_questions(conn, batch_id=batch_id, rows=question_rows)
+            deleted_rows = _delete_all_questions(conn)
+
+        exam_service.invalidate_cache()
+        logger.warning(
+            "Question cleanup completed | batch_id=%s backup_rows=%s deleted_rows=%s backup_table=%s",
+            batch_id,
+            backup_rows,
+            deleted_rows,
+            _QUESTION_PURGE_BACKUP_TABLE,
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "batch_id": batch_id,
+                "backup_rows": backup_rows,
+                "deleted_rows": deleted_rows,
+                "backup_table": _QUESTION_PURGE_BACKUP_TABLE,
+                "note": "Only the questions table was cleaned. Users, payments, premium, and login data were not changed.",
+            }
+        )
+    except Exception as exc:
+        logger.exception("Question cleanup failed | batch_id=%s", batch_id)
         return jsonify({"ok": False, "batch_id": batch_id, "error": str(exc)}), 500
 
 

@@ -6,7 +6,7 @@
         <span class="eyebrow">Admin Panel</span>
         <h1>QuizPathshala management</h1>
         <p>Manage shared users, premium pricing, exams, sets, questions, and web support while the Telegram bot continues using the same database.</p>
-        <form method="post" action="{{ url_for('admin.admin_logout') }}">
+        <form accept-charset="UTF-8" method="post" action="{{ url_for('admin.admin_logout') }}">
             <button class="button button-secondary" type="submit">Log Out</button>
         </form>
     </div>
@@ -160,7 +160,7 @@
 
         <div class="data-card">
             <h2>Question search</h2>
-            <form method="get">
+            <form accept-charset="UTF-8" method="get">
                 <label for="question_search">Search by question text</label>
                 <input id="question_search" name="q" type="text" value="{{ search_query }}" placeholder="constitution, math, reasoning...">
                 <button class="button button-primary" type="submit">Search</button>

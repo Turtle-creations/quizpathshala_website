@@ -205,9 +205,9 @@ class ExamService:
         image_path: str | None = None,
         time_limit: int | None = None,
     ):
-        normalized_question_text = normalize_unicode_text(question_text.strip())
-        normalized_options = [normalize_unicode_text(option.strip()) for option in options]
-        normalized_correct_option = normalize_unicode_text(correct_option)
+        cleaned_question_text = str(question_text or "").strip()
+        cleaned_options = [str(option or "").strip() for option in options]
+        cleaned_correct_option = str(correct_option or "").strip()
 
         with database.connection() as conn:
             cursor = conn.execute(
@@ -220,12 +220,12 @@ class ExamService:
                 (
                     exam_id,
                     set_id,
-                    normalized_question_text,
-                    normalized_options[0],
-                    normalized_options[1],
-                    normalized_options[2],
-                    normalized_options[3],
-                    self._normalize_stored_correct_answer(normalized_options, normalized_correct_option),
+                    cleaned_question_text,
+                    cleaned_options[0],
+                    cleaned_options[1],
+                    cleaned_options[2],
+                    cleaned_options[3],
+                    self._normalize_stored_correct_answer(cleaned_options, cleaned_correct_option),
                     image_path,
                     time_limit or DEFAULT_QUESTION_TIME,
                     timestamp(),

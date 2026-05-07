@@ -27,7 +27,7 @@
                 <p>{{ exam.description or "Exam practice category" }}</p>
                 <p><strong>{{ exam.set_count }}</strong> sets | <strong>{{ exam.question_count }}</strong> total questions</p>
                 {% for set_item in exam.sets %}
-                <form method="post" class="quiz-set-form">
+                <form accept-charset="UTF-8" method="post" class="quiz-set-form">
                     <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                     <div class="quiz-set-row">
                         <div>
