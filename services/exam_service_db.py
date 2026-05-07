@@ -14,6 +14,26 @@ def timestamp() -> str:
 logger = get_logger(__name__)
 
 
+def normalize_unicode_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value)
+    if not text:
+        return text
+
+    suspicious_markers = ("\u00e0\u00a4", "\u00e0\u00a5", "\u00c3", "\u00c2", "\u00e2\u20ac", "\u00f0\u0178")
+    if not any(marker in text for marker in suspicious_markers):
+        return text
+
+    try:
+        repaired = text.encode("latin1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+    return repaired if repaired else text
+
+
 class ExamService:
     def exam_storage_ready(self) -> bool:
         return database.tables_exist({"exams", "exam_sets", "questions"})
@@ -97,7 +117,7 @@ class ExamService:
 
         questions = []
         for row in rows:
-            item = dict(row)
+            item = self._normalize_question_record(dict(row))
             item["options"] = [
                 item["option_a"],
                 item["option_b"],
@@ -111,6 +131,12 @@ class ExamService:
             questions.append(item)
 
         return questions
+
+    def _normalize_question_record(self, item: dict) -> dict:
+        for field_name in ("question_text", "option_a", "option_b", "option_c", "option_d", "correct_option", "explanation"):
+            if field_name in item:
+                item[field_name] = normalize_unicode_text(item.get(field_name))
+        return item
 
     def add_exam(self, title: str, description: str | None = None):
         with database.connection() as conn:
@@ -179,6 +205,10 @@ class ExamService:
         image_path: str | None = None,
         time_limit: int | None = None,
     ):
+        normalized_question_text = normalize_unicode_text(question_text.strip())
+        normalized_options = [normalize_unicode_text(option.strip()) for option in options]
+        normalized_correct_option = normalize_unicode_text(correct_option)
+
         with database.connection() as conn:
             cursor = conn.execute(
                 """
@@ -190,12 +220,12 @@ class ExamService:
                 (
                     exam_id,
                     set_id,
-                    question_text.strip(),
-                    options[0].strip(),
-                    options[1].strip(),
-                    options[2].strip(),
-                    options[3].strip(),
-                    self._normalize_stored_correct_answer(options, correct_option),
+                    normalized_question_text,
+                    normalized_options[0],
+                    normalized_options[1],
+                    normalized_options[2],
+                    normalized_options[3],
+                    self._normalize_stored_correct_answer(normalized_options, normalized_correct_option),
                     image_path,
                     time_limit or DEFAULT_QUESTION_TIME,
                     timestamp(),
@@ -252,7 +282,7 @@ class ExamService:
                 """,
                 (pattern, limit),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._normalize_question_record(dict(row)) for row in rows]
 
     def get_question(self, question_id: int) -> dict | None:
         with database.connection() as conn:
@@ -264,7 +294,7 @@ class ExamService:
         if not row:
             return None
 
-        item = dict(row)
+        item = self._normalize_question_record(dict(row))
         item["options"] = [
             item["option_a"],
             item["option_b"],
@@ -375,3 +405,4 @@ class ExamService:
 
 
 exam_service = ExamService()
+

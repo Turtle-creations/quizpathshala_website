@@ -25,7 +25,7 @@
     <div class="container admin-grid">
         <div class="form-card">
             <h2>Update premium prices</h2>
-            <form method="post">
+            <form method="post" accept-charset="UTF-8">
                 <input type="hidden" name="action" value="update_price">
                 <label for="plan_type">Plan</label>
                 <select id="plan_type" name="plan_type">
@@ -46,7 +46,7 @@
 
         <div class="form-card">
             <h2>Add exam</h2>
-            <form method="post">
+            <form method="post" accept-charset="UTF-8">
                 <input type="hidden" name="action" value="add_exam">
                 <label for="exam_title">Exam title</label>
                 <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
@@ -58,7 +58,7 @@
 
         <div class="form-card">
             <h2>Add set</h2>
-            <form method="post">
+            <form method="post" accept-charset="UTF-8">
                 <input type="hidden" name="action" value="add_set">
                 <label for="set_exam_id">Exam</label>
                 <select id="set_exam_id" name="exam_id">
@@ -77,7 +77,7 @@
 
         <div class="form-card">
             <h2>Add single question</h2>
-            <form method="post">
+            <form method="post" accept-charset="UTF-8">
                 <input type="hidden" name="action" value="add_question">
                 <label for="question_exam_id">Exam</label>
                 <select id="question_exam_id" name="exam_id">
@@ -107,7 +107,7 @@
 
         <div class="form-card">
             <h2>Bulk upload questions</h2>
-            <form method="post">
+            <form method="post" accept-charset="UTF-8">
                 <input type="hidden" name="action" value="bulk_import">
                 <label for="bulk_exam_id">Exam</label>
                 <select id="bulk_exam_id" name="exam_id">
@@ -142,7 +142,7 @@
                         <td>{{ '%.2f'|format(user.score) }}</td>
                         <td>
                             {% if current_user.user_role == 'super_admin' and user.user_role != 'super_admin' %}
-                            <form method="post">
+                            <form method="post" accept-charset="UTF-8">
                                 <input type="hidden" name="action" value="change_role">
                                 <input type="hidden" name="target_user_id" value="{{ user.user_id }}">
                                 <input type="hidden" name="target_role" value="{{ 'user' if user.user_role == 'admin' else 'admin' }}">
@@ -177,7 +177,7 @@
                         <td>{{ item.set_title }}</td>
                         <td>{{ item.question_text }}</td>
                         <td>
-                            <form method="post">
+                            <form method="post" accept-charset="UTF-8">
                                 <input type="hidden" name="action" value="delete_question">
                                 <input type="hidden" name="question_id" value="{{ item.question_id }}">
                                 <button class="button button-secondary" type="submit">Delete</button>
@@ -205,7 +205,7 @@
                         <p>{{ exam.description or 'No description' }}</p>
                         <p>{{ exam.question_count }} questions across {{ exam.set_count }} sets</p>
                     </div>
-                    <form method="post">
+                    <form method="post" accept-charset="UTF-8">
                         <input type="hidden" name="action" value="delete_exam">
                         <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
                         <button class="button button-secondary" type="submit">Delete Exam</button>
@@ -220,13 +220,13 @@
                             <p>Set ID {{ set_item.set_id }} | {{ set_item.question_count }} questions | {{ 'Premium' if set_item.is_premium_locked else 'Free' }}</p>
                         </div>
                         <div class="hero-actions">
-                            <form method="post">
+                            <form method="post" accept-charset="UTF-8">
                                 <input type="hidden" name="action" value="toggle_set_lock">
                                 <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                                 <input type="hidden" name="lock_state" value="{{ 0 if set_item.is_premium_locked else 1 }}">
                                 <button class="button button-secondary" type="submit">{{ 'Make Free' if set_item.is_premium_locked else 'Make Premium' }}</button>
                             </form>
-                            <form method="post">
+                            <form method="post" accept-charset="UTF-8">
                                 <input type="hidden" name="action" value="delete_set">
                                 <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                                 <button class="button button-secondary" type="submit">Delete Set</button>
@@ -244,7 +244,7 @@
                                 <td>{{ question.question_text }}</td>
                                 <td>{{ question.correct_option }}</td>
                                 <td>
-                                    <form method="post">
+                                    <form method="post" accept-charset="UTF-8">
                                         <input type="hidden" name="action" value="delete_question">
                                         <input type="hidden" name="question_id" value="{{ question.question_id }}">
                                         <button class="button button-secondary" type="submit">Delete</button>
@@ -333,3 +333,4 @@
     </div>
 </section>
 {% endblock %}
+

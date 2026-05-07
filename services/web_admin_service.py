@@ -1,5 +1,5 @@
 from db.database import database
-from services.exam_service_db import exam_service
+from services.exam_service_db import exam_service, normalize_unicode_text
 from services.payment_service_db import payment_service
 from services.support_service_db import support_service
 from services.user_service_db import user_service
@@ -74,7 +74,7 @@ class WebAdminService:
                 """,
                 (set_id, limit),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [exam_service._normalize_question_record(dict(row)) for row in rows]
 
     def add_exam(self, title: str, description: str | None = None) -> dict:
         return exam_service.add_exam(title, description)
@@ -109,7 +109,7 @@ class WebAdminService:
             with database.connection() as conn:
                 conn.execute(
                     "UPDATE questions SET explanation = ? WHERE question_id = ?",
-                    (explanation.strip(), result["row_id"]),
+                    (normalize_unicode_text(explanation.strip()), result["row_id"]),
                 )
             exam_service.invalidate_cache()
             result["record"] = exam_service.get_question(result["row_id"])

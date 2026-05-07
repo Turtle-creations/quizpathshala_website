@@ -195,6 +195,7 @@ class Database:
         if not connection_kwargs:
             connection_kwargs["conninfo"] = self.dsn
 
+        connection_kwargs.setdefault("client_encoding", "utf8")
         return connection_kwargs
 
     def table_exists(self, table_name: str) -> bool:

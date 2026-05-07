@@ -41,6 +41,8 @@ def create_app() -> Flask:
         static_url_path="/static",
     )
     app.config["SECRET_KEY"] = SECRET_KEY
+    app.config["JSON_AS_ASCII"] = False
+    app.json.ensure_ascii = False
 
     if APP_ENV == "production" and SECRET_KEY == "quizpathshala-web-secret":
         logger.warning("Production is using the default SECRET_KEY. Set SECRET_KEY in Render environment variables.")
@@ -60,6 +62,12 @@ def create_app() -> Flask:
     except Exception:
         logger.exception("Application startup failed during database initialization/bootstrap")
         raise
+
+    @app.after_request
+    def ensure_utf8_response(response):
+        if response.mimetype in {"text/html", "application/json", "text/plain", "application/javascript", "text/javascript"}:
+            response.headers["Content-Type"] = f"{response.mimetype}; charset=utf-8"
+        return response
 
     @app.context_processor
     def inject_site_context():
