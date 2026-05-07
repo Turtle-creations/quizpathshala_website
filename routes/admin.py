@@ -18,6 +18,7 @@ admin_blueprint = Blueprint("admin", __name__)
 logger = get_logger(__name__)
 _MOJIBAKE_MARKERS = ("\u00e0\u00a4", "\u00e0\u00a5")
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+_SUSPICIOUS_SEGMENT_RE = re.compile(r"(?:\u00e0\u00a4|\u00e0\u00a5)[^\u0900-\u097F\s]{0,8}(?:[^\u0900-\u097F\s]|\u00e0\u00a4|\u00e0\u00a5)+")
 _MOJIBAKE_FIELDS = (
     "question_text",
     "option_a",
@@ -87,8 +88,6 @@ def _iter_repair_candidates(value: str):
                     seen.add(second_pass)
                     yield f"{source_encoding}->utf8 twice", second_pass
 
-    # Conservative ftfy-style fallback: try both common Western byte interpretations and
-    # only consider results that clearly improve into Devanagari text.
     latin1_then_cp1252 = _decode_with(value, "latin1")
     if latin1_then_cp1252 and _contains_mojibake(latin1_then_cp1252):
         candidate = _decode_with(latin1_then_cp1252, "cp1252")
@@ -116,7 +115,7 @@ def _score_candidate(original: str, candidate: str) -> tuple[int, int, int, int]
     )
 
 
-def _repair_mojibake_text(value: str) -> tuple[str | None, str | None]:
+def _best_repair_candidate(value: str) -> tuple[str | None, str | None]:
     best_text = None
     best_method = None
     best_score = None
@@ -136,6 +135,45 @@ def _repair_mojibake_text(value: str) -> tuple[str | None, str | None]:
             best_score = score
 
     return best_text, best_method
+
+
+def _repair_mojibake_segments(value: str) -> tuple[str | None, list[dict[str, str]]]:
+    repaired_segments: list[dict[str, str]] = []
+
+    def replace_match(match: re.Match[str]) -> str:
+        segment = match.group(0)
+        repaired, method = _best_repair_candidate(segment)
+        if not repaired or repaired == segment:
+            return segment
+        repaired_segments.append(
+            {
+                "method": method or "unknown",
+                "before": _safe_preview(segment, limit=80),
+                "after": _safe_preview(repaired, limit=80),
+            }
+        )
+        return repaired
+
+    updated = _SUSPICIOUS_SEGMENT_RE.sub(replace_match, value)
+    if updated == value:
+        return None, []
+    if _contains_mojibake(updated):
+        return None, repaired_segments
+    if not _contains_devanagari(updated):
+        return None, repaired_segments
+    return updated, repaired_segments
+
+
+def _repair_mojibake_text(value: str) -> tuple[str | None, str | None, list[dict[str, str]]]:
+    repaired, method = _best_repair_candidate(value)
+    if repaired and repaired != value:
+        return repaired, method, []
+
+    segment_repaired, segment_previews = _repair_mojibake_segments(value)
+    if segment_repaired and segment_repaired != value:
+        return segment_repaired, "segment_repair", segment_previews
+
+    return None, None, segment_previews
 
 
 def _ensure_mojibake_backup_table(conn) -> None:
@@ -217,7 +255,7 @@ def _build_question_changes(row: dict) -> tuple[dict[str, str], list[dict[str, s
         if not _contains_mojibake(value):
             continue
 
-        repaired, method = _repair_mojibake_text(value)
+        repaired, method, segment_previews = _repair_mojibake_text(value)
         if not repaired or repaired == value:
             logger.info(
                 "Mojibake repair skipped | question_id=%s field=%s reason=no_valid_devanagari_candidate before=%s",
@@ -235,6 +273,15 @@ def _build_question_changes(row: dict) -> tuple[dict[str, str], list[dict[str, s
                 "before": _safe_preview(value),
                 "after": _safe_preview(repaired),
             }
+        )
+        previews.extend(
+            {
+                "field": field_name,
+                "method": f"{method or 'unknown'}:{segment_preview['method']}",
+                "before": segment_preview["before"],
+                "after": segment_preview["after"],
+            }
+            for segment_preview in segment_previews
         )
 
     return changes, previews
