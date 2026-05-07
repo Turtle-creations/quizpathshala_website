@@ -6,7 +6,8 @@ from config import (
     BOT_URL,
     CANONICAL_URL,
     DATABASE_BACKEND,
-    DATABASE_DSN,
+    DATABASE_HOST,
+    DATABASE_PORT,
     PORT,
     SECRET_KEY,
     SITE_NAME,
@@ -45,10 +46,11 @@ def create_app() -> Flask:
         logger.warning("Production is using the default SECRET_KEY. Set SECRET_KEY in Render environment variables.")
 
     logger.info(
-        "Initializing QuizPathshala app | env=%s database_backend=%s database_target=%s",
+        "Initializing QuizPathshala app | env=%s database_backend=%s database_host=%s database_port=%s",
         APP_ENV,
         DATABASE_BACKEND,
-        DATABASE_DSN if DATABASE_BACKEND == "postgres" else "sqlite-local",
+        DATABASE_HOST or "sqlite-local",
+        DATABASE_PORT or "-",
     )
 
     try:

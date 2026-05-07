@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 def _read_bool_env(name: str, default: bool = False) -> bool:
@@ -16,6 +17,20 @@ def _normalize_database_url(raw_value: str) -> str:
     return normalized
 
 
+def _build_postgres_config(database_url: str) -> dict[str, object]:
+    parsed = urlparse(database_url)
+    query_values = {key: values[-1] for key, values in parse_qs(parsed.query, keep_blank_values=True).items() if values}
+    return {
+        "scheme": parsed.scheme,
+        "host": parsed.hostname or "",
+        "port": parsed.port or 5432,
+        "dbname": unquote(parsed.path.lstrip("/")) if parsed.path else "",
+        "user": unquote(parsed.username) if parsed.username else "",
+        "password": unquote(parsed.password) if parsed.password else "",
+        "options": query_values,
+    }
+
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 IMAGE_DIR = DATA_DIR / "images"
@@ -30,6 +45,9 @@ if DATABASE_URL:
     DATABASE_BACKEND = "postgres"
     DATABASE_PATH = None
     DATABASE_DSN = DATABASE_URL
+    POSTGRES_CONFIG = _build_postgres_config(DATABASE_DSN)
+    DATABASE_HOST = str(POSTGRES_CONFIG["host"] or "")
+    DATABASE_PORT = int(POSTGRES_CONFIG["port"] or 5432)
 else:
     DATABASE_BACKEND = "sqlite"
     if _db_path_env:
@@ -43,6 +61,9 @@ else:
     else:
         DATABASE_PATH = DATA_DIR / "quiz_bot_v2.db"
     DATABASE_DSN = str(DATABASE_PATH)
+    POSTGRES_CONFIG = None
+    DATABASE_HOST = ""
+    DATABASE_PORT = None
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 

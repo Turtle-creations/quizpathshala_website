@@ -2,7 +2,11 @@ import re
 import sqlite3
 from contextlib import contextmanager
 
-from config import DATABASE_BACKEND, DATABASE_DSN, DATA_DIR
+from config import DATABASE_BACKEND, DATABASE_DSN, DATABASE_HOST, DATABASE_PORT, DATA_DIR, POSTGRES_CONFIG
+from utils.logging_utils import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class PostgresCursorAdapter:
@@ -157,7 +161,13 @@ class Database:
             from psycopg import connect
             from psycopg.rows import dict_row
 
-            raw_connection = connect(self.dsn, row_factory=dict_row)
+            connection_kwargs = self._postgres_connect_kwargs()
+            logger.info(
+                "Opening postgres connection | host=%s port=%s",
+                DATABASE_HOST or "unknown",
+                DATABASE_PORT or 5432,
+            )
+            raw_connection = connect(**connection_kwargs, row_factory=dict_row)
             conn = PostgresConnectionAdapter(raw_connection)
 
         try:
@@ -168,6 +178,24 @@ class Database:
             raise
         finally:
             conn.close()
+
+    def _postgres_connect_kwargs(self) -> dict[str, object]:
+        postgres_config = POSTGRES_CONFIG or {}
+        connection_kwargs: dict[str, object] = {}
+
+        for key in ("host", "port", "dbname", "user", "password"):
+            value = postgres_config.get(key)
+            if value not in (None, ""):
+                connection_kwargs[key] = value
+
+        for key, value in dict(postgres_config.get("options") or {}).items():
+            if value not in (None, ""):
+                connection_kwargs[key] = value
+
+        if not connection_kwargs:
+            connection_kwargs["conninfo"] = self.dsn
+
+        return connection_kwargs
 
     def table_exists(self, table_name: str) -> bool:
         with self.connection() as conn:
@@ -550,3 +578,9 @@ class Database:
 
 
 database = Database(DATABASE_BACKEND, DATABASE_DSN)
+
+
+
+
+
+
