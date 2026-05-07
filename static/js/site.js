@@ -8,14 +8,13 @@ document.addEventListener("DOMContentLoaded", function () {
     var logo = header.querySelector("[data-navbar-logo]");
     var logoMark = header.querySelector(".brand-mark");
     var navItems = Array.prototype.slice.call(header.querySelectorAll(".site-nav a, .nav-actions > *"));
-    var collapseThreshold = 120;
-    var expandThreshold = 72;
-    var minDirectionDelta = 8;
+    var collapseThreshold = 80;
+    var expandThreshold = 40;
     var throttleMs = 90;
-    var lastScrollY = window.scrollY || 0;
-    var lastKnownScrollY = lastScrollY;
+    var lastKnownScrollY = window.scrollY || 0;
     var lastRunAt = 0;
     var ticking = false;
+    var isCollapsed = false;
 
     function setAnimationMetrics() {
         if (!shell || !logoMark) {
@@ -30,6 +29,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         shell.style.setProperty("--nav-expanded-width", expandedWidth + "px");
         shell.style.setProperty("--nav-collapsed-size", collapsedSize + "px");
+
+        if (isCollapsed) {
+            header.classList.add("navbar-collapsed");
+        }
     }
 
     function setItemDelays() {
@@ -41,28 +44,24 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function expandNavbar() {
-        header.classList.remove("navbar-collapsed");
-    }
+    function applyNavbarState(shouldCollapse) {
+        if (shouldCollapse === isCollapsed) {
+            return;
+        }
 
-    function collapseNavbar() {
-        header.classList.add("navbar-collapsed");
+        isCollapsed = shouldCollapse;
+        header.classList.toggle("navbar-collapsed", isCollapsed);
     }
 
     function processScroll() {
         var currentScrollY = lastKnownScrollY;
-        var delta = currentScrollY - lastScrollY;
-        var nearTop = currentScrollY <= expandThreshold;
-        var shouldCollapse = currentScrollY > collapseThreshold && delta > minDirectionDelta;
-        var shouldExpand = nearTop || delta < -minDirectionDelta;
 
-        if (shouldExpand) {
-            expandNavbar();
-        } else if (shouldCollapse) {
-            collapseNavbar();
+        if (!isCollapsed && currentScrollY >= collapseThreshold) {
+            applyNavbarState(true);
+        } else if (isCollapsed && currentScrollY <= expandThreshold) {
+            applyNavbarState(false);
         }
 
-        lastScrollY = currentScrollY;
         lastRunAt = performance.now();
         ticking = false;
     }
@@ -84,35 +83,35 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("resize", function () {
         window.requestAnimationFrame(function () {
             setAnimationMetrics();
-            requestScrollUpdate();
+            lastKnownScrollY = window.scrollY || 0;
+            processScroll();
         });
     });
 
     if (logo) {
         logo.addEventListener("click", function (event) {
-            if (header.classList.contains("navbar-collapsed")) {
+            if (isCollapsed) {
                 event.preventDefault();
                 event.stopPropagation();
-                expandNavbar();
-                return;
+                applyNavbarState(false);
             }
         });
 
         logo.addEventListener("touchstart", function () {
-            if (header.classList.contains("navbar-collapsed")) {
-                expandNavbar();
+            if (isCollapsed) {
+                applyNavbarState(false);
             }
         }, { passive: true });
 
         logo.addEventListener("keydown", function (event) {
-            if (header.classList.contains("navbar-collapsed") && (event.key === "Enter" || event.key === " ")) {
+            if (isCollapsed && (event.key === "Enter" || event.key === " ")) {
                 event.preventDefault();
-                expandNavbar();
+                applyNavbarState(false);
             }
         });
     }
 
     setItemDelays();
     setAnimationMetrics();
-    requestScrollUpdate();
+    processScroll();
 });
