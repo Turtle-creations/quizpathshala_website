@@ -794,16 +794,32 @@ th, td {
 .review-status-inline {
     margin-bottom: 0.25rem;
     font-size: 1rem;
-    font-weight: 800;
     line-height: 1.4;
 }
 
-.review-status-inline-good {
-    color: #4f8b62;
+.answer-status,
+.review-status-inline.answer-status,
+.answer-review-shell .answer-status,
+.result-details .answer-status,
+.data-card .answer-status,
+.info-card .answer-status {
+    font-weight: 600;
 }
 
-.review-status-inline-bad {
-    color: #b06a6a;
+.answer-status.answer-status-correct,
+.review-status-inline.answer-status.answer-status-correct,
+.answer-review-shell .answer-status.answer-status-correct,
+.data-card .answer-status.answer-status-correct,
+.info-card .answer-status.answer-status-correct {
+    color: #22c55e;
+}
+
+.answer-status.answer-status-wrong,
+.review-status-inline.answer-status.answer-status-wrong,
+.answer-review-shell .answer-status.answer-status-wrong,
+.data-card .answer-status.answer-status-wrong,
+.info-card .answer-status.answer-status-wrong {
+    color: #ef4444;
 }
 
 .answer-review-shell {

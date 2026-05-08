@@ -56,7 +56,7 @@
                 {% endif %}
                 <p><strong>Your answer:</strong> {{ item.selected_text or 'Not answered' }}</p>
                 <p><strong>Correct answer:</strong> {{ item.correct_answer }}</p>
-                <p><strong>Status:</strong> {{ 'Correct' if item.correct else 'Wrong' }}</p>
+                <p><strong>Status:</strong> <span class="answer-status {% if item.correct %}answer-status-correct{% else %}answer-status-wrong{% endif %}">{{ 'Correct' if item.correct else 'Wrong' }}</span></p>
                 {% if item.explanation %}
                 <p><strong>Explanation:</strong> {{ item.explanation }}</p>
                 {% endif %}

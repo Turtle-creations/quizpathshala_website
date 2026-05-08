@@ -40,7 +40,7 @@
             </form>
             {% else %}
             <div class="answer-review-shell">
-                <div class="review-status-inline {% if active_result.correct %}review-status-inline-good{% else %}review-status-inline-bad{% endif %}">
+                <div class="review-status-inline answer-status {% if active_result.correct %}answer-status-correct{% else %}answer-status-wrong{% endif %}">
                     {% if active_result.action == "skip" %}
                     Skipped
                     {% elif active_result.action == "timeout" %}
