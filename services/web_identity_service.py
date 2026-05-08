@@ -15,6 +15,19 @@ class WebIdentityService:
     _AUTH_CACHE_KEY = "_web_identity_authenticated_user"
     _SNAPSHOT_CACHE_KEY = "_web_identity_authenticated_snapshot"
     _CACHE_MISS = object()
+    _FULL_SNAPSHOT_FIELDS = {
+        "user_id",
+        "full_name",
+        "username",
+        "email",
+        "phone_number",
+        "user_role",
+        "is_admin",
+        "is_premium",
+        "premium_expires_at",
+        "score",
+        "created_at",
+    }
 
     def get_or_create_user(self) -> dict:
         authenticated = self.get_authenticated_user()
@@ -84,6 +97,11 @@ class WebIdentityService:
         cached_user = self._get_cached_authenticated_user()
         if cached_user is not self._CACHE_MISS:
             return dict(cached_user) if cached_user else {}
+
+        snapshot = self.get_authenticated_user_snapshot()
+        if self._snapshot_can_serve_authenticated_user(snapshot, user_id):
+            self._set_cached_authenticated_user(snapshot)
+            return dict(snapshot)
 
         user = user_service.get_user(int(user_id))
         if not user:
@@ -170,10 +188,28 @@ class WebIdentityService:
         return {
             "user_id": int(user["user_id"]),
             "full_name": user.get("full_name") or "QuizPathshala User",
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "phone_number": user.get("phone_number"),
             "user_role": str(user.get("user_role") or ("admin" if user.get("is_admin") else "user")),
             "is_admin": 1 if user.get("is_admin") else 0,
             "is_premium": 1 if user.get("is_premium") else 0,
+            "premium_expires_at": user.get("premium_expires_at"),
+            "score": float(user.get("score") or 0),
+            "created_at": user.get("created_at"),
         }
+
+    def _snapshot_can_serve_authenticated_user(self, snapshot: dict, user_id) -> bool:
+        if not snapshot:
+            return False
+        try:
+            snapshot_user_id = int(snapshot.get("user_id"))
+            expected_user_id = int(user_id)
+        except (TypeError, ValueError):
+            return False
+        if snapshot_user_id != expected_user_id:
+            return False
+        return self._FULL_SNAPSHOT_FIELDS.issubset(snapshot.keys())
 
     def _generate_user_id(self) -> int:
         return random.randint(7000000000, 7999999999)

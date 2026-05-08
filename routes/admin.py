@@ -434,7 +434,7 @@ def _apply_mojibake_repairs(conn, rows: list[dict]) -> tuple[int, int]:
 
 @admin_blueprint.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    current_user = web_identity_service.get_authenticated_user()
+    current_user = web_identity_service.get_authenticated_user_snapshot()
     if current_user and web_identity_service.is_admin_authenticated():
         return redirect(url_for("admin.admin_dashboard"))
 
@@ -551,7 +551,7 @@ def cleanup_questions():
 @admin_blueprint.route("/admin", methods=["GET", "POST"])
 @admin_required
 def admin_dashboard():
-    current_user = web_identity_service.get_authenticated_user()
+    current_user = web_identity_service.get_authenticated_user_snapshot()
 
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
@@ -669,15 +669,15 @@ def admin_dashboard():
             flash(str(exc), "error")
         return _admin_dashboard_redirect(redirect_values, anchor=return_anchor)
 
-    dashboard = web_admin_service.dashboard_data()
-    dashboard.pop("question_search_results", None)
     search_query = (request.args.get("q") or "").strip()
-    question_search_results = web_admin_service.search_questions(search_query) if search_query else []
-    catalog = web_admin_service.catalog_for_admin()
     edit_question_id_raw = (request.args.get("edit_question_id") or "").strip()
-    editing_question = None
+    edit_question_id = None
     if edit_question_id_raw.isdigit():
-        editing_question = web_admin_service.get_question(int(edit_question_id_raw))
+        edit_question_id = int(edit_question_id_raw)
+    dashboard = web_admin_service.dashboard_page_data(
+        search_text=search_query,
+        edit_question_id=edit_question_id,
+    )
 
     admin_return_anchor = _sanitize_admin_anchor(request.args.get("return_anchor"))
 
@@ -688,9 +688,6 @@ def admin_dashboard():
         admin_authenticated=True,
         current_user=current_user,
         search_query=search_query,
-        question_search_results=question_search_results,
-        catalog=catalog,
-        editing_question=editing_question,
         admin_return_anchor=admin_return_anchor,
         **dashboard,
     )
