@@ -143,8 +143,21 @@ def play():
         return redirect(url_for("quiz.play"))
 
     quiz_snapshot = _quiz_session_snapshot() or _store_quiz_session_snapshot(user_id)
-    logger.info("Quiz play render | user_id=%s index=%s total=%s has_result=%s", user_id, quiz_snapshot.get("index"), quiz_snapshot.get("total"), bool(session.get("active_result")))
+    active_result = session.get("active_result")
+    if not active_result and quiz_snapshot.get("last_result") and quiz_snapshot.get("awaiting_next"):
+        active_result = quiz_snapshot.get("last_result")
+        session["active_result"] = active_result
+
+    logger.info("Quiz play render | user_id=%s index=%s total=%s has_result=%s", user_id, quiz_snapshot.get("index"), quiz_snapshot.get("total"), bool(active_result))
     question = quiz_snapshot.get("current_question")
+    if not question and active_result:
+        question = {
+            "number": int(active_result.get("answered_index") or 0) + 1,
+            "total": int(quiz_snapshot.get("total") or 0),
+            "remaining_seconds": 0,
+            "question_text": active_result.get("question_text") or "",
+            "image_path": active_result.get("image_path"),
+        }
     if not question:
         summary = web_quiz_service.submit_quiz(user_id, ended_reason="completed")
         session["last_quiz_result"] = summary
@@ -152,7 +165,6 @@ def play():
         _clear_quiz_session_snapshot()
         return redirect(url_for("quiz.result"))
 
-    active_result = session.get("active_result")
     current_set = {"title": quiz_snapshot.get("set_title") or "Quiz Set"}
     return render_template(
         "play.html",

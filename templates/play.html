@@ -69,6 +69,15 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+    if (window.quizCountdownTimer) {
+        window.clearInterval(window.quizCountdownTimer);
+        window.quizCountdownTimer = null;
+    }
+    if (window.quizAutoNextTimer) {
+        window.clearTimeout(window.quizAutoNextTimer);
+        window.quizAutoNextTimer = null;
+    }
+
     var timerNode = document.getElementById("timer-value");
     var quizForm = document.getElementById("quiz-form");
     var nextForm = document.getElementById("next-question-form");
@@ -92,7 +101,6 @@ document.addEventListener("DOMContentLoaded", function () {
         var formButtons = Array.prototype.slice.call(quizForm.querySelectorAll("button"));
         var remaining = Number(timerNode.textContent || "0");
         var submitted = false;
-        var timer = null;
 
         function disableQuizControls() {
             optionButtons.forEach(function (button) {
@@ -109,8 +117,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
             submitted = true;
-            if (timer) {
-                window.clearInterval(timer);
+            if (window.quizCountdownTimer) {
+                window.clearInterval(window.quizCountdownTimer);
+                window.quizCountdownTimer = null;
+            }
+            if (window.quizAutoNextTimer) {
+                window.clearTimeout(window.quizAutoNextTimer);
+                window.quizAutoNextTimer = null;
             }
             if (typeof selectedIndex === "number") {
                 selectedOptionNode.value = String(selectedIndex);
@@ -130,18 +143,20 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
-        timer = window.setInterval(function () {
+        window.quizCountdownTimer = window.setInterval(function () {
             remaining -= 1;
             timerNode.textContent = Math.max(remaining, 0);
             if (remaining <= 0) {
-                window.clearInterval(timer);
+                window.clearInterval(window.quizCountdownTimer);
+                window.quizCountdownTimer = null;
                 submitQuiz("timeout");
             }
         }, 1000);
     }
 
     if (nextForm) {
-        window.setTimeout(function () {
+        window.quizAutoNextTimer = window.setTimeout(function () {
+            window.quizAutoNextTimer = null;
             submitFormSafely(nextForm);
         }, 2000);
     }
