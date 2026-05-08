@@ -40,37 +40,22 @@
             </form>
             {% else %}
             <div class="answer-review-shell">
-                <div class="result-badge review-status-badge {% if active_result.correct %}result-good{% else %}result-bad{% endif %}">
+                <div class="review-status-inline {% if active_result.correct %}review-status-inline-good{% else %}review-status-inline-bad{% endif %}">
                     {% if active_result.action == "skip" %}
-                    Question skipped
+                    Skipped
                     {% elif active_result.action == "timeout" %}
-                    Time is up for this question
+                    Time up
                     {% elif active_result.correct %}
-                    Correct answer
+                    Correct
                     {% else %}
-                    Wrong answer
+                    Wrong
                     {% endif %}
                 </div>
 
-                <div class="answer-review-grid">
-                    <article class="answer-review-card {% if active_result.correct %}answer-review-card-good{% elif active_result.selected_text %}answer-review-card-bad{% else %}answer-review-card-neutral{% endif %}">
-                        <span class="answer-review-label">Your answer</span>
-                        <p class="answer-review-value">
-                            {% if active_result.selected_text %}
-                            {{ active_result.selected_text }}
-                            {% elif active_result.action == "skip" %}
-                            No option selected
-                            {% else %}
-                            No answer submitted
-                            {% endif %}
-                        </p>
-                    </article>
-
-                    <article class="answer-review-card answer-review-card-correct">
-                        <span class="answer-review-label">Correct answer</span>
-                        <p class="answer-review-value">{{ active_result.correct_answer }}</p>
-                    </article>
-                </div>
+                <article class="answer-review-card answer-review-card-correct answer-review-card-compact">
+                    <span class="answer-review-label">Correct answer</span>
+                    <p class="answer-review-value">{{ active_result.correct_answer }}</p>
+                </article>
             </div>
             <form accept-charset="UTF-8" method="post" id="next-question-form" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="next">
