@@ -679,6 +679,8 @@ def admin_dashboard():
     if edit_question_id_raw.isdigit():
         editing_question = web_admin_service.get_question(int(edit_question_id_raw))
 
+    admin_return_anchor = _sanitize_admin_anchor(request.args.get("return_anchor"))
+
     return render_template(
         "admin_dashboard.html",
         page_title="Admin Panel",
@@ -689,5 +691,6 @@ def admin_dashboard():
         question_search_results=question_search_results,
         catalog=catalog,
         editing_question=editing_question,
+        admin_return_anchor=admin_return_anchor,
         **dashboard,
     )

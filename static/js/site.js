@@ -140,3 +140,100 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 });
+
+
+document.addEventListener("DOMContentLoaded", function () {
+    if (!document.querySelector("[data-admin-dashboard='true']")) {
+        return;
+    }
+
+    var storageKey = "admin-dashboard-scroll-state";
+
+    function sanitizeAnchor(value) {
+        if (!value) {
+            return "";
+        }
+        return String(value).replace(/^#/, "").trim();
+    }
+
+    function resolvePanelId(form) {
+        var explicitAnchor = sanitizeAnchor(form.getAttribute("data-return-anchor"));
+        if (explicitAnchor) {
+            return explicitAnchor;
+        }
+
+        var existingAnchor = form.querySelector("input[name='return_anchor']");
+        if (existingAnchor && sanitizeAnchor(existingAnchor.value)) {
+            return sanitizeAnchor(existingAnchor.value);
+        }
+
+        var panel = form.closest("[data-admin-panel]");
+        return panel && panel.id ? panel.id : "";
+    }
+
+    function ensureHiddenField(form, name, value) {
+        var field = form.querySelector("input[name='" + name + "']");
+        if (!field) {
+            field = document.createElement("input");
+            field.type = "hidden";
+            field.name = name;
+            form.appendChild(field);
+        }
+        field.value = value;
+    }
+
+    function saveState(panelId) {
+        var state = {
+            anchor: panelId || "",
+            scrollY: window.scrollY || window.pageYOffset || 0,
+            path: window.location.pathname,
+            query: window.location.search || ""
+        };
+        window.sessionStorage.setItem(storageKey, JSON.stringify(state));
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll("form[data-admin-preserve='true']")).forEach(function (form) {
+        form.addEventListener("submit", function () {
+            var panelId = resolvePanelId(form);
+            saveState(panelId);
+            ensureHiddenField(form, "return_anchor", panelId);
+        });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll("a[href*='#']")).forEach(function (link) {
+        if (!link.href || link.href.indexOf(window.location.pathname) === -1) {
+            return;
+        }
+        link.addEventListener("click", function () {
+            saveState(sanitizeAnchor(link.hash));
+        });
+    });
+
+    var storedState = null;
+    try {
+        storedState = JSON.parse(window.sessionStorage.getItem(storageKey) || "null");
+    } catch (error) {
+        storedState = null;
+    }
+
+    var hashAnchor = sanitizeAnchor(window.location.hash);
+    var targetId = hashAnchor || (storedState && storedState.path === window.location.pathname ? sanitizeAnchor(storedState.anchor) : "");
+    var targetPanel = targetId ? document.getElementById(targetId) : null;
+
+    if (targetPanel) {
+        window.requestAnimationFrame(function () {
+            targetPanel.scrollIntoView({ block: "start", behavior: "auto" });
+            window.setTimeout(function () {
+                try {
+                    targetPanel.focus({ preventScroll: true });
+                } catch (error) {
+                    targetPanel.focus();
+                }
+            }, 20);
+        });
+    } else if (storedState && storedState.path === window.location.pathname && typeof storedState.scrollY === "number") {
+        window.requestAnimationFrame(function () {
+            window.scrollTo(0, storedState.scrollY);
+        });
+    }
+});
