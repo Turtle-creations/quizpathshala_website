@@ -73,6 +73,18 @@ document.addEventListener("DOMContentLoaded", function () {
     var quizForm = document.getElementById("quiz-form");
     var nextForm = document.getElementById("next-question-form");
 
+    function submitFormSafely(form) {
+        if (!form || form.dataset.submitted === "true") {
+            return;
+        }
+        form.dataset.submitted = "true";
+        if (typeof form.requestSubmit === "function") {
+            form.requestSubmit();
+            return;
+        }
+        form.submit();
+    }
+
     if (quizForm && timerNode) {
         var actionNode = document.getElementById("quiz-action");
         var selectedOptionNode = document.getElementById("selected-option-input");
@@ -80,6 +92,7 @@ document.addEventListener("DOMContentLoaded", function () {
         var formButtons = Array.prototype.slice.call(quizForm.querySelectorAll("button"));
         var remaining = Number(timerNode.textContent || "0");
         var submitted = false;
+        var timer = null;
 
         function disableQuizControls() {
             optionButtons.forEach(function (button) {
@@ -96,12 +109,17 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
             submitted = true;
+            if (timer) {
+                window.clearInterval(timer);
+            }
             if (typeof selectedIndex === "number") {
                 selectedOptionNode.value = String(selectedIndex);
+            } else {
+                selectedOptionNode.value = "";
             }
             actionNode.value = action;
             disableQuizControls();
-            quizForm.submit();
+            submitFormSafely(quizForm);
         }
 
         optionButtons.forEach(function (button) {
@@ -112,11 +130,11 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
-        var timer = setInterval(function () {
+        timer = window.setInterval(function () {
             remaining -= 1;
             timerNode.textContent = Math.max(remaining, 0);
             if (remaining <= 0) {
-                clearInterval(timer);
+                window.clearInterval(timer);
                 submitQuiz("timeout");
             }
         }, 1000);
@@ -124,7 +142,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (nextForm) {
         window.setTimeout(function () {
-            nextForm.submit();
+            submitFormSafely(nextForm);
         }, 2000);
     }
 });

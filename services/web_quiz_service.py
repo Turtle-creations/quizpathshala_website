@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
 import random
 import time
 
@@ -8,15 +9,18 @@ from db.database import database
 from services.exam_service_db import exam_service
 from services.premium_service_db import premium_service
 from services.user_service_db import user_service
+from utils.logging_utils import get_logger
 
 
 class WebQuizService:
     QUIZ_COUNT_OPTIONS = (20, 50, 100)
     MAX_QUESTIONS_PER_QUIZ = 100
     SESSION_STORAGE_KEY = "active_quiz_session"
+    ACTIVE_SESSION_TABLE = "web_quiz_sessions"
 
     def __init__(self) -> None:
         self.sessions: dict[int, dict] = {}
+        self.logger = get_logger(__name__)
 
     def list_exam_catalog(self, user_id: int) -> list[dict]:
         catalog = []
@@ -80,10 +84,30 @@ class WebQuizService:
             "responses": [],
             "stats_started": False,
         }
+        self._persist_session(user_id)
+        self.logger.info(
+            "Quiz start | user_id=%s set_id=%s requested_count=%s actual_count=%s",
+            user_id,
+            set_id,
+            requested_count,
+            actual_count,
+        )
         return self.sessions[user_id], None
 
     def get_session(self, user_id: int) -> dict | None:
-        return self.sessions.get(user_id)
+        session = self.sessions.get(user_id)
+        if session:
+            return session
+        restored = self._load_persisted_session(user_id)
+        if restored:
+            self.sessions[user_id] = restored
+            self.logger.info(
+                "Quiz session restored from database | user_id=%s set_id=%s index=%s",
+                user_id,
+                restored.get("set_id"),
+                restored.get("index"),
+            )
+        return restored
 
     def build_session_snapshot(self, user_id: int) -> dict | None:
         quiz_session = self.get_session(user_id)
@@ -170,17 +194,42 @@ class WebQuizService:
         session["locked"] = True
         session["last_result"] = result
         session.setdefault("responses", []).append(self._review_payload(result))
+        self._persist_session(user_id)
+        self.logger.info(
+            "Quiz answer submit | user_id=%s question_id=%s index=%s action=%s selected_index=%s correct=%s",
+            user_id,
+            result.get("question_id"),
+            session.get("index"),
+            result.get("action"),
+            selected_index,
+            result.get("correct"),
+        )
         return result
 
     def next_question(self, user_id: int) -> bool:
         session = self.get_session(user_id)
         if not session:
+            self.logger.warning("Quiz next question requested without active session | user_id=%s", user_id)
             return False
-        session["index"] += 1
+        next_index = int(session.get("index") or 0) + 1
+        session["index"] = next_index
         session["locked"] = False
         session["last_result"] = None
         session["current_question_started_at"] = time.time()
-        return session["index"] < len(session["questions"])
+        has_more = next_index < len(session["questions"])
+        if has_more:
+            self._persist_session(user_id)
+        else:
+            self._delete_persisted_session(user_id)
+        self.logger.info(
+            "Quiz next question | user_id=%s set_id=%s next_index=%s total=%s has_more=%s",
+            user_id,
+            session.get("set_id"),
+            next_index,
+            len(session.get("questions") or []),
+            has_more,
+        )
+        return has_more
 
     def submit_quiz(self, user_id: int, ended_reason: str = "submitted") -> dict:
         session = self.get_session(user_id)
@@ -199,6 +248,15 @@ class WebQuizService:
             self._timestamp_now(),
         )
         summary["set_title"] = session.get("set_title")
+        self.logger.info(
+            "Quiz submit | user_id=%s set_id=%s correct=%s wrong=%s skipped=%s ended_reason=%s",
+            user_id,
+            session.get("set_id"),
+            summary["correct"],
+            summary["wrong"],
+            summary["skipped"],
+            ended_reason,
+        )
         user_service.record_quiz_attempt(
             user_id=user_id,
             set_id=session["set_id"],
@@ -209,6 +267,7 @@ class WebQuizService:
             ended_reason=ended_reason,
         )
         self.sessions.pop(user_id, None)
+        self._delete_persisted_session(user_id)
         return summary
 
     def remaining_seconds(self, user_id: int) -> int:
@@ -273,6 +332,99 @@ class WebQuizService:
                 }
             )
         return attempts
+
+
+    def _ensure_active_session_table(self, conn) -> None:
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.ACTIVE_SESSION_TABLE} (
+                user_id BIGINT PRIMARY KEY,
+                session_payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    def _persist_session(self, user_id: int) -> None:
+        session = self.sessions.get(user_id)
+        if not session:
+            return
+
+        payload = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
+        updated_at = self._timestamp_now()
+        with database.connection() as conn:
+            self._ensure_active_session_table(conn)
+            conn.execute(f"DELETE FROM {self.ACTIVE_SESSION_TABLE} WHERE user_id = ?", (user_id,))
+            conn.execute(
+                f"INSERT INTO {self.ACTIVE_SESSION_TABLE} (user_id, session_payload, updated_at) VALUES (?, ?, ?)",
+                (user_id, payload, updated_at),
+            )
+
+    def _load_persisted_session(self, user_id: int) -> dict | None:
+        with database.connection() as conn:
+            self._ensure_active_session_table(conn)
+            row = conn.execute(
+                f"SELECT session_payload FROM {self.ACTIVE_SESSION_TABLE} WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+
+        if not row:
+            return None
+
+        try:
+            payload = json.loads(row["session_payload"] if isinstance(row, dict) else row[0])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self.logger.exception("Stored quiz session payload could not be decoded | user_id=%s", user_id)
+            self._delete_persisted_session(user_id)
+            return None
+
+        session = self._normalize_loaded_session(payload)
+        if not session:
+            self._delete_persisted_session(user_id)
+            return None
+        return session
+
+    def _delete_persisted_session(self, user_id: int) -> None:
+        with database.connection() as conn:
+            self._ensure_active_session_table(conn)
+            conn.execute(f"DELETE FROM {self.ACTIVE_SESSION_TABLE} WHERE user_id = ?", (user_id,))
+
+    def _normalize_loaded_session(self, payload: dict) -> dict | None:
+        if not isinstance(payload, dict):
+            return None
+
+        questions = payload.get("questions")
+        responses = payload.get("responses")
+        if not isinstance(questions, list) or not questions:
+            return None
+        if responses is None or not isinstance(responses, list):
+            responses = []
+
+        try:
+            normalized = {
+                "set_id": int(payload.get("set_id") or 0),
+                "set_title": payload.get("set_title") or "Quiz Set",
+                "requested_count": int(payload.get("requested_count") or len(questions)),
+                "questions": questions,
+                "index": int(payload.get("index") or 0),
+                "current_question_started_at": float(payload.get("current_question_started_at") or time.time()),
+                "started_at": payload.get("started_at") or self._timestamp_now(),
+                "locked": bool(payload.get("locked")),
+                "last_result": payload.get("last_result"),
+                "correct_count": int(payload.get("correct_count") or 0),
+                "wrong_count": int(payload.get("wrong_count") or 0),
+                "skipped_count": int(payload.get("skipped_count") or 0),
+                "responses": responses,
+                "stats_started": bool(payload.get("stats_started")),
+            }
+        except (TypeError, ValueError):
+            return None
+
+        if normalized["index"] < 0:
+            normalized["index"] = 0
+        if normalized["index"] > len(questions):
+            normalized["index"] = len(questions)
+        return normalized
 
     def _prepare_question(self, question: dict) -> dict:
         item = deepcopy(question)

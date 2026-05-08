@@ -1,11 +1,14 @@
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
+from utils.logging_utils import get_logger
+
 from routes.auth import login_required
 from services.web_identity_service import web_identity_service
 from services.web_quiz_service import web_quiz_service
 
 
 quiz_blueprint = Blueprint("quiz", __name__)
+logger = get_logger(__name__)
 
 
 def _quiz_session_snapshot() -> dict:
@@ -46,7 +49,8 @@ def quiz_start():
 
         session["active_result"] = None
         session["last_quiz_result"] = None
-        _store_quiz_session_snapshot(user_id)
+        snapshot = _store_quiz_session_snapshot(user_id)
+        logger.info("Quiz start route | user_id=%s set_id=%s total=%s", user_id, set_id, snapshot.get("total"))
         flash(
             f"Quiz started for {started.get('set_title') or 'Quiz Set'} with {len(started['questions'])} questions.",
             "success",
@@ -75,8 +79,15 @@ def play():
 
     quiz_session = web_quiz_service.get_session(user_id)
     if not quiz_session:
+        restored_snapshot = _quiz_session_snapshot()
+        logger.warning(
+            "Quiz play missing active session | user_id=%s has_snapshot=%s snapshot_index=%s",
+            user_id,
+            bool(restored_snapshot),
+            restored_snapshot.get("index") if restored_snapshot else None,
+        )
         _clear_quiz_session_snapshot()
-        flash("Start a quiz first.", "error")
+        flash("Your previous quiz session was unavailable. Please start again.", "error")
         return redirect(url_for("quiz.quiz_start"))
 
     if request.method == "POST":
@@ -93,25 +104,29 @@ def play():
                 return redirect(url_for("quiz.play"))
             result = web_quiz_service.answer_question(user_id, selected_index, action="answer")
             session["active_result"] = result or session.get("active_result")
-            _store_quiz_session_snapshot(user_id)
+            snapshot = _store_quiz_session_snapshot(user_id)
+            logger.info("Quiz answer route | user_id=%s index=%s action=answer", user_id, snapshot.get("index"))
             return redirect(url_for("quiz.play"))
 
         if action == "skip":
             result = web_quiz_service.answer_question(user_id, None, action="skip")
             session["active_result"] = result or session.get("active_result")
-            _store_quiz_session_snapshot(user_id)
+            snapshot = _store_quiz_session_snapshot(user_id)
+            logger.info("Quiz answer route | user_id=%s index=%s action=skip", user_id, snapshot.get("index"))
             return redirect(url_for("quiz.play"))
 
         if action == "timeout":
             result = web_quiz_service.answer_question(user_id, None, action="timeout")
             session["active_result"] = result or session.get("active_result")
-            _store_quiz_session_snapshot(user_id)
+            snapshot = _store_quiz_session_snapshot(user_id)
+            logger.info("Quiz answer route | user_id=%s index=%s action=timeout", user_id, snapshot.get("index"))
             return redirect(url_for("quiz.play"))
 
         if action == "next":
             session["active_result"] = None
             if web_quiz_service.next_question(user_id):
-                _store_quiz_session_snapshot(user_id)
+                snapshot = _store_quiz_session_snapshot(user_id)
+                logger.info("Quiz next route | user_id=%s next_index=%s", user_id, snapshot.get("index"))
                 return redirect(url_for("quiz.play"))
             summary = web_quiz_service.submit_quiz(user_id, ended_reason="completed")
             session["last_quiz_result"] = summary
@@ -128,6 +143,7 @@ def play():
         return redirect(url_for("quiz.play"))
 
     quiz_snapshot = _quiz_session_snapshot() or _store_quiz_session_snapshot(user_id)
+    logger.info("Quiz play render | user_id=%s index=%s total=%s has_result=%s", user_id, quiz_snapshot.get("index"), quiz_snapshot.get("total"), bool(session.get("active_result")))
     question = quiz_snapshot.get("current_question")
     if not question:
         summary = web_quiz_service.submit_quiz(user_id, ended_reason="completed")
