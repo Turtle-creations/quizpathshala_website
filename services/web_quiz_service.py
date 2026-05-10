@@ -148,18 +148,35 @@ class WebQuizService:
             return None
         if session.get("awaiting_next"):
             return self._result_question_payload(session)
-        index = session["index"]
-        if index >= len(session["questions"]):
+        questions = session.get("questions") or []
+        index = int(session.get("index") or 0)
+        if index < 0 or index >= len(questions):
             return None
-        question = deepcopy(session["questions"][index])
+        question = deepcopy(questions[index])
         question["remaining_seconds"] = self.remaining_seconds(user_id)
         question["number"] = index + 1
-        question["total"] = len(session["questions"])
+        question["total"] = len(questions)
         return question
 
     def answer_question(self, user_id: int, selected_index: int | None, action: str = "answer") -> dict | None:
         session = self.get_session(user_id)
         if not session:
+            return None
+
+        questions = session.get("questions") or []
+        current_index = int(session.get("index") or 0)
+        if current_index < 0:
+            current_index = 0
+            session["index"] = current_index
+        if not questions or current_index > len(questions):
+            self.logger.warning(
+                "Quiz answer rejected due to corrupt session | user_id=%s index=%s question_count=%s action=%s",
+                user_id,
+                current_index,
+                len(questions),
+                action,
+            )
+            self.clear_session(user_id)
             return None
 
         if session.get("awaiting_next") and session.get("last_result"):
@@ -173,9 +190,16 @@ class WebQuizService:
 
         question = self.get_current_question(user_id)
         if not question or session["locked"]:
+            if not question:
+                self.logger.warning(
+                    "Quiz answer ignored without active question | user_id=%s index=%s action=%s locked=%s",
+                    user_id,
+                    current_index,
+                    action,
+                    bool(session.get("locked")),
+                )
             return None
 
-        current_index = int(session.get("index") or 0)
         question_key = f"{question['question_id']}:{current_index}"
         if session.get("last_processed_key") == question_key and session.get("last_result"):
             self.logger.info(
@@ -312,17 +336,22 @@ class WebQuizService:
         self._delete_persisted_session(user_id)
         return summary
 
+    def clear_session(self, user_id: int) -> None:
+        self.sessions.pop(user_id, None)
+        self._delete_persisted_session(user_id)
+
     def remaining_seconds(self, user_id: int) -> int:
         session = self.get_session(user_id)
         if not session:
             return 0
         if session.get("awaiting_next"):
             return 0
-        index = session["index"]
-        if index >= len(session["questions"]):
+        questions = session.get("questions") or []
+        index = int(session.get("index") or 0)
+        if index < 0 or index >= len(questions):
             return 0
-        question = session["questions"][index]
-        elapsed = int(time.time() - session["current_question_started_at"])
+        question = questions[index]
+        elapsed = int(time.time() - float(session.get("current_question_started_at") or time.time()))
         return max(0, int(question["time_limit"]) - elapsed)
 
     def user_performance_snapshot(self, user_id: int, limit: int = 8) -> dict:

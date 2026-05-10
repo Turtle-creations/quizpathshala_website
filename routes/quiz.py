@@ -25,6 +25,25 @@ def _clear_quiz_session_snapshot() -> None:
     session.pop(web_quiz_service.SESSION_STORAGE_KEY, None)
 
 
+def _restart_quiz_session(user_id: int, *, message: str) -> None:
+    web_quiz_service.clear_session(user_id)
+    session["active_result"] = None
+    _clear_quiz_session_snapshot()
+    flash(message, "error")
+
+
+def _handle_play_action_result(user_id: int, result: dict | None, *, action: str):
+    if not result:
+        logger.warning("Quiz play action failed gracefully | user_id=%s action=%s", user_id, action)
+        _restart_quiz_session(user_id, message="Your quiz session expired or was invalid. Please start again.")
+        return redirect(url_for("quiz.quiz_start"))
+
+    session["active_result"] = result
+    snapshot = _store_quiz_session_snapshot(user_id)
+    logger.info("Quiz answer route | user_id=%s index=%s action=%s", user_id, snapshot.get("index"), action)
+    return redirect(url_for("quiz.play"))
+
+
 @quiz_blueprint.route("/quiz", methods=["GET", "POST"])
 @login_required
 def quiz_start():
@@ -102,25 +121,31 @@ def play():
             except ValueError:
                 flash("Please select a valid option.", "error")
                 return redirect(url_for("quiz.play"))
-            result = web_quiz_service.answer_question(user_id, selected_index, action="answer")
-            session["active_result"] = result or session.get("active_result")
-            snapshot = _store_quiz_session_snapshot(user_id)
-            logger.info("Quiz answer route | user_id=%s index=%s action=answer", user_id, snapshot.get("index"))
-            return redirect(url_for("quiz.play"))
+            try:
+                result = web_quiz_service.answer_question(user_id, selected_index, action="answer")
+            except Exception:
+                logger.exception("Quiz answer route crashed | user_id=%s action=answer", user_id)
+                _restart_quiz_session(user_id, message="We restarted your quiz because the previous session became unavailable.")
+                return redirect(url_for("quiz.quiz_start"))
+            return _handle_play_action_result(user_id, result, action="answer")
 
         if action == "skip":
-            result = web_quiz_service.answer_question(user_id, None, action="skip")
-            session["active_result"] = result or session.get("active_result")
-            snapshot = _store_quiz_session_snapshot(user_id)
-            logger.info("Quiz answer route | user_id=%s index=%s action=skip", user_id, snapshot.get("index"))
-            return redirect(url_for("quiz.play"))
+            try:
+                result = web_quiz_service.answer_question(user_id, None, action="skip")
+            except Exception:
+                logger.exception("Quiz answer route crashed | user_id=%s action=skip", user_id)
+                _restart_quiz_session(user_id, message="We restarted your quiz because the previous session became unavailable.")
+                return redirect(url_for("quiz.quiz_start"))
+            return _handle_play_action_result(user_id, result, action="skip")
 
         if action == "timeout":
-            result = web_quiz_service.answer_question(user_id, None, action="timeout")
-            session["active_result"] = result or session.get("active_result")
-            snapshot = _store_quiz_session_snapshot(user_id)
-            logger.info("Quiz answer route | user_id=%s index=%s action=timeout", user_id, snapshot.get("index"))
-            return redirect(url_for("quiz.play"))
+            try:
+                result = web_quiz_service.answer_question(user_id, None, action="timeout")
+            except Exception:
+                logger.exception("Quiz answer route crashed | user_id=%s action=timeout", user_id)
+                _restart_quiz_session(user_id, message="We restarted your quiz because the previous session became unavailable.")
+                return redirect(url_for("quiz.quiz_start"))
+            return _handle_play_action_result(user_id, result, action="timeout")
 
         if action == "next":
             session["active_result"] = None
