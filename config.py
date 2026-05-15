@@ -104,6 +104,8 @@ ADMINS = {
 
 PASSWORD_RESET_LOCAL_DEV_OTP = _read_bool_env("PASSWORD_RESET_LOCAL_DEV_OTP", APP_ENV != "production")
 PASSWORD_RESET_OTP_TTL_MINUTES = max(5, min(int(os.getenv("PASSWORD_RESET_OTP_TTL_MINUTES", "10")), 10))
+BREVO_API_KEY = (os.getenv("BREVO_API_KEY") or "").strip()
+BREVO_API_URL = (os.getenv("BREVO_API_URL") or "https://api.brevo.com/v3/smtp/email").strip()
 SMTP_PROVIDER = (os.getenv("SMTP_PROVIDER") or os.getenv("MAIL_PROVIDER") or "").strip().lower()
 SMTP_HOST = (
     os.getenv("SMTP_HOST")

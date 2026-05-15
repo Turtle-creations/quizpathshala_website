@@ -6,10 +6,14 @@ import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
+import httpx
+
 from werkzeug.security import generate_password_hash
 
 from config import (
     APP_ENV,
+    BREVO_API_KEY,
+    BREVO_API_URL,
     PASSWORD_RESET_LOCAL_DEV_OTP,
     PASSWORD_RESET_OTP_TTL_MINUTES,
     SECRET_KEY,
@@ -236,15 +240,24 @@ class WebPasswordResetService:
     def is_local_dev_mode(self) -> bool:
         return PASSWORD_RESET_LOCAL_DEV_OTP or APP_ENV != "production"
 
-    def validate_smtp_configuration(self) -> dict:
-        snapshot = self._smtp_config_snapshot()
+    def validate_email_delivery_configuration(self) -> dict:
+        mode = self._delivery_mode()
+        snapshot = self._delivery_config_snapshot()
         errors: list[str] = []
         warnings: list[str] = []
 
         if self.is_local_dev_mode():
             warnings.append("password reset emails are bypassed because local/dev OTP mode is enabled")
+            return {"mode": mode, "snapshot": snapshot, "errors": errors, "warnings": warnings}
 
-        if not snapshot["dev_mode"]:
+        if mode == "brevo_api":
+            if not snapshot["brevo_api_key_configured"]:
+                errors.append("missing BREVO_API_KEY")
+            if not snapshot["brevo_api_url"]:
+                errors.append("missing BREVO_API_URL")
+            if not snapshot["from_email"]:
+                errors.append("missing SMTP from email")
+        else:
             if not snapshot["host"]:
                 errors.append("missing SMTP host")
             if not snapshot["from_email"]:
@@ -255,20 +268,21 @@ class WebPasswordResetService:
                 errors.append("SMTP_USE_TLS and SMTP_USE_SSL cannot both be enabled")
             if snapshot["port"] <= 0:
                 errors.append("SMTP port must be a positive integer")
-        if snapshot["provider"] == "gmail" and snapshot["port"] not in {465, 587}:
-            warnings.append("Gmail usually expects port 587 with TLS or 465 with SSL")
-        if snapshot["provider"] == "brevo" and snapshot["port"] != 587:
-            warnings.append("Brevo usually expects port 587 with TLS")
-        if snapshot["provider"] == "sendgrid" and snapshot["username"] != "apikey":
-            warnings.append("SendGrid usually expects SMTP username 'apikey'")
+            if snapshot["provider"] == "gmail" and snapshot["port"] not in {465, 587}:
+                warnings.append("Gmail usually expects port 587 with TLS or 465 with SSL")
+            if snapshot["provider"] == "brevo" and snapshot["port"] != 587:
+                warnings.append("Brevo SMTP usually expects port 587 with TLS")
+            if snapshot["provider"] == "sendgrid" and snapshot["username"] != "apikey":
+                warnings.append("SendGrid usually expects SMTP username 'apikey'")
 
-        return {"snapshot": snapshot, "errors": errors, "warnings": warnings}
+        return {"mode": mode, "snapshot": snapshot, "errors": errors, "warnings": warnings}
 
-    def log_smtp_configuration_status(self) -> None:
-        status = self.validate_smtp_configuration()
+    def log_email_delivery_configuration_status(self) -> None:
+        status = self.validate_email_delivery_configuration()
         snapshot = status["snapshot"]
         logger.info(
-            "SMTP startup configuration | provider=%s host=%s port=%s tls=%s ssl=%s from_email=%s username_configured=%s password_configured=%s dev_mode=%s",
+            "Password reset email delivery startup | mode=%s provider=%s host=%s port=%s tls=%s ssl=%s from_email=%s username_configured=%s password_configured=%s brevo_api_key_configured=%s dev_mode=%s",
+            status["mode"],
             snapshot["provider"],
             snapshot["host"] or "-",
             snapshot["port"],
@@ -277,20 +291,63 @@ class WebPasswordResetService:
             snapshot["from_email"] or "-",
             snapshot["username_configured"],
             snapshot["password_configured"],
+            snapshot["brevo_api_key_configured"],
             snapshot["dev_mode"],
         )
         for warning in status["warnings"]:
-            logger.warning("SMTP startup validation warning | %s", warning)
+            logger.warning("Password reset email delivery validation warning | %s", warning)
         for error in status["errors"]:
-            logger.error("SMTP startup validation error | %s", error)
+            logger.error("Password reset email delivery validation error | %s", error)
 
     def _send_reset_email(self, recipient_email: str, otp: str, expires_at: datetime) -> None:
-        status = self.validate_smtp_configuration()
+        status = self.validate_email_delivery_configuration()
         if status["errors"]:
-            raise ValueError("SMTP configuration invalid: " + "; ".join(status["errors"]))
+            raise ValueError("Email delivery configuration invalid: " + "; ".join(status["errors"]))
 
+        if status["mode"] == "brevo_api":
+            self._send_reset_email_via_brevo(recipient_email, otp, expires_at)
+            return
+
+        self._send_reset_email_via_smtp(recipient_email, otp, expires_at)
+
+    def _send_reset_email_via_brevo(self, recipient_email: str, otp: str, expires_at: datetime) -> None:
         logger.info(
-            "Password reset email send attempted | email=%s smtp_provider=%s smtp_host=%s smtp_port=%s tls=%s ssl=%s smtp_user_configured=%s from_email=%s",
+            "Password reset email send attempted | email=%s delivery=brevo_api api_url=%s from_email=%s",
+            recipient_email,
+            BREVO_API_URL,
+            SMTP_FROM_EMAIL,
+        )
+        payload = {
+            "sender": {"email": SMTP_FROM_EMAIL, "name": SITE_NAME},
+            "to": [{"email": recipient_email}],
+            "subject": f"{SITE_NAME} password reset OTP",
+            "textContent": (
+                f"Your {SITE_NAME} password reset OTP is {otp}.\n\n"
+                f"It expires at {expires_at.replace(microsecond=0).isoformat()} UTC and can be used only once.\n"
+                "If you did not request this, you can ignore this email."
+            ),
+        }
+        headers = {
+            "accept": "application/json",
+            "api-key": BREVO_API_KEY,
+            "content-type": "application/json",
+        }
+        with httpx.Client(timeout=20) as client:
+            response = client.post(BREVO_API_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            response_data = response.json() if response.content else {}
+
+        message_id = response_data.get("messageId") or response.headers.get("x-message-id") or "-"
+        logger.info(
+            "Password reset email send succeeded | email=%s delivery=brevo_api status_code=%s message_id=%s",
+            recipient_email,
+            response.status_code,
+            message_id,
+        )
+
+    def _send_reset_email_via_smtp(self, recipient_email: str, otp: str, expires_at: datetime) -> None:
+        logger.info(
+            "Password reset email send attempted | email=%s delivery=smtp smtp_provider=%s smtp_host=%s smtp_port=%s tls=%s ssl=%s smtp_user_configured=%s from_email=%s",
             recipient_email,
             SMTP_PROVIDER or self._guess_provider(SMTP_HOST),
             SMTP_HOST,
@@ -329,9 +386,9 @@ class WebPasswordResetService:
                     smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
                 smtp.send_message(message)
 
-        logger.info("Password reset email send succeeded | email=%s", recipient_email)
+        logger.info("Password reset email send succeeded | email=%s delivery=smtp", recipient_email)
 
-    def _smtp_config_snapshot(self) -> dict:
+    def _delivery_config_snapshot(self) -> dict:
         provider = SMTP_PROVIDER or self._guess_provider(SMTP_HOST)
         return {
             "provider": provider or "generic",
@@ -344,8 +401,15 @@ class WebPasswordResetService:
             "username_configured": bool(SMTP_USERNAME),
             "password_configured": bool(SMTP_PASSWORD),
             "requires_auth": bool(SMTP_USERNAME),
+            "brevo_api_url": BREVO_API_URL,
+            "brevo_api_key_configured": bool(BREVO_API_KEY),
             "dev_mode": self.is_local_dev_mode(),
         }
+
+    def _delivery_mode(self) -> str:
+        if BREVO_API_KEY:
+            return "brevo_api"
+        return "smtp"
 
     def _guess_provider(self, host: str) -> str:
         normalized_host = (host or "").strip().lower()
@@ -359,7 +423,7 @@ class WebPasswordResetService:
 
     def _sanitize_exception_message(self, exc: Exception) -> str:
         message = str(exc) or exc.__class__.__name__
-        for secret in {SMTP_PASSWORD, SECRET_KEY}:
+        for secret in {BREVO_API_KEY, SMTP_PASSWORD, SECRET_KEY}:
             if secret:
                 message = message.replace(secret, "[REDACTED]")
         message = re.sub(r"(?i)(password|pass|api[_ -]?key|token)(\s*[:=]\s*)([^\s,;]+)", r"\1\2[REDACTED]", message)

@@ -56,7 +56,7 @@ def create_app() -> Flask:
         DATABASE_HOST or "sqlite-local",
         DATABASE_PORT or "-",
     )
-    web_password_reset_service.log_smtp_configuration_status()
+    web_password_reset_service.log_email_delivery_configuration_status()
 
     try:
         database.initialize()
