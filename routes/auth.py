@@ -134,10 +134,20 @@ def login():
 @auth_blueprint.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
-        result = web_password_reset_service.request_reset(
-            request.form.get("email", ""),
-            requested_ip=request.headers.get("X-Forwarded-For", request.remote_addr),
-        )
+        try:
+            result = web_password_reset_service.request_reset(
+                request.form.get("email", ""),
+                requested_ip=request.headers.get("X-Forwarded-For", request.remote_addr),
+            )
+        except Exception:
+            logger.exception(
+                "Forgot password route failed | email=%s remote_addr=%s",
+                request.form.get("email", ""),
+                request.headers.get("X-Forwarded-For", request.remote_addr),
+            )
+            flash("We could not start password reset right now. Please try again in a few minutes.", "error")
+            return redirect(url_for("auth.forgot_password"))
+
         if not result.get("ok"):
             flash(result.get("error") or "Unable to start password reset.", "error")
             return redirect(url_for("auth.forgot_password"))
@@ -145,7 +155,7 @@ def forgot_password():
         session[RESET_EMAIL_SESSION_KEY] = result.get("email") or ""
         if result.get("dev_otp") and web_password_reset_service.is_local_dev_mode():
             session[DEV_OTP_SESSION_KEY] = result["dev_otp"]
-        flash(result.get("message") or "If that email is registered, an OTP has been sent.", "success")
+        flash(result.get("message") or "If the email can receive messages, a password reset OTP has been sent.", "success")
         return redirect(url_for("auth.verify_reset_otp", email=result.get("email") or ""))
 
     dev_otp = None

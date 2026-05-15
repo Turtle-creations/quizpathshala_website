@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 class WebPasswordResetService:
     def request_reset(self, email: str, *, requested_ip: str | None = None) -> dict:
         normalized_email = self._normalize_email(email)
-        generic_message = "If that email is registered, an OTP has been sent for password reset."
+        generic_message = "If the email can receive messages, a password reset OTP has been sent."
         if not normalized_email:
             return {"ok": False, "error": "Please enter a valid email address."}
 
@@ -49,12 +49,31 @@ class WebPasswordResetService:
         otp = f"{secrets.randbelow(1000000):06d}"
         created_at = self._now()
         expires_at = created_at + timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)
+        logger.info(
+            "Password reset OTP generated | user_id=%s email=%s reset_id=%s expires_at=%s",
+            user.get("user_id"),
+            normalized_email,
+            reset_id,
+            expires_at.replace(microsecond=0).isoformat(),
+        )
 
         if self.is_local_dev_mode():
             logger.info("Local password reset OTP | email=%s otp=%s expires_at=%s", normalized_email, otp, expires_at.isoformat())
             print(f"[DEV OTP] Password reset OTP for {normalized_email}: {otp}")
         else:
-            self._send_reset_email(normalized_email, otp, expires_at)
+            try:
+                self._send_reset_email(normalized_email, otp, expires_at)
+            except Exception:
+                logger.exception(
+                    "Password reset email send failed | user_id=%s email=%s reset_id=%s",
+                    user.get("user_id"),
+                    normalized_email,
+                    reset_id,
+                )
+                return {
+                    "ok": False,
+                    "error": "We could not send the reset email right now. Please try again in a few minutes.",
+                }
 
         otp_hash = self._hash_secret(reset_id, otp)
         with database.connection() as conn:
@@ -83,6 +102,13 @@ class WebPasswordResetService:
                 ),
             )
 
+        logger.info(
+            "Password reset OTP stored | user_id=%s email=%s reset_id=%s expires_at=%s",
+            user.get("user_id"),
+            normalized_email,
+            reset_id,
+            expires_at.replace(microsecond=0).isoformat(),
+        )
         return {
             "ok": True,
             "message": generic_message,
@@ -207,7 +233,19 @@ class WebPasswordResetService:
 
     def _send_reset_email(self, recipient_email: str, otp: str, expires_at: datetime) -> None:
         if not SMTP_HOST or not SMTP_PORT or not SMTP_FROM_EMAIL:
-            raise ValueError("SMTP is not configured for production password reset emails.")
+            raise ValueError("SMTP is not configured for password reset emails.")
+        if SMTP_USERNAME and not SMTP_PASSWORD:
+            raise ValueError("SMTP username is configured but SMTP password is missing.")
+
+        logger.info(
+            "Password reset email send attempted | email=%s smtp_host=%s smtp_port=%s tls=%s smtp_user_configured=%s from_email=%s",
+            recipient_email,
+            SMTP_HOST,
+            SMTP_PORT,
+            SMTP_USE_TLS,
+            bool(SMTP_USERNAME),
+            SMTP_FROM_EMAIL,
+        )
 
         message = EmailMessage()
         message["Subject"] = f"{SITE_NAME} password reset OTP"
@@ -222,11 +260,15 @@ class WebPasswordResetService:
         )
 
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
+            smtp.ehlo()
             if SMTP_USE_TLS:
                 smtp.starttls()
+                smtp.ehlo()
             if SMTP_USERNAME:
                 smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
             smtp.send_message(message)
+
+        logger.info("Password reset email send succeeded | email=%s", recipient_email)
 
     def _hash_secret(self, reset_id: str, value: str) -> str:
         return hmac.new(

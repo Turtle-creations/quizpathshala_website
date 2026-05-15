@@ -103,10 +103,10 @@ ADMINS = {
 }
 
 PASSWORD_RESET_LOCAL_DEV_OTP = _read_bool_env("PASSWORD_RESET_LOCAL_DEV_OTP", APP_ENV != "production")
-PASSWORD_RESET_OTP_TTL_MINUTES = int(os.getenv("PASSWORD_RESET_OTP_TTL_MINUTES", "10"))
-SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip()
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or "").strip()
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM_EMAIL = (os.getenv("SMTP_FROM_EMAIL") or SUPPORT_EMAIL or SMTP_USERNAME).strip()
-SMTP_USE_TLS = _read_bool_env("SMTP_USE_TLS", True)
+PASSWORD_RESET_OTP_TTL_MINUTES = max(5, min(int(os.getenv("PASSWORD_RESET_OTP_TTL_MINUTES", "10")), 10))
+SMTP_HOST = (os.getenv("SMTP_HOST") or os.getenv("MAIL_HOST") or "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT") or os.getenv("MAIL_PORT") or "587")
+SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or os.getenv("MAIL_USERNAME") or "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD") or ""
+SMTP_FROM_EMAIL = (os.getenv("SMTP_FROM_EMAIL") or os.getenv("MAIL_DEFAULT_SENDER") or SUPPORT_EMAIL or SMTP_USERNAME).strip()
+SMTP_USE_TLS = _read_bool_env("SMTP_USE_TLS", _read_bool_env("MAIL_USE_TLS", True))
