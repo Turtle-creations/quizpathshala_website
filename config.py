@@ -104,9 +104,37 @@ ADMINS = {
 
 PASSWORD_RESET_LOCAL_DEV_OTP = _read_bool_env("PASSWORD_RESET_LOCAL_DEV_OTP", APP_ENV != "production")
 PASSWORD_RESET_OTP_TTL_MINUTES = max(5, min(int(os.getenv("PASSWORD_RESET_OTP_TTL_MINUTES", "10")), 10))
-SMTP_HOST = (os.getenv("SMTP_HOST") or os.getenv("MAIL_HOST") or "").strip()
-SMTP_PORT = int(os.getenv("SMTP_PORT") or os.getenv("MAIL_PORT") or "587")
-SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or os.getenv("MAIL_USERNAME") or "").strip()
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD") or ""
+SMTP_PROVIDER = (os.getenv("SMTP_PROVIDER") or os.getenv("MAIL_PROVIDER") or "").strip().lower()
+SMTP_HOST = (
+    os.getenv("SMTP_HOST")
+    or os.getenv("SMTP_SERVER")
+    or os.getenv("MAIL_HOST")
+    or os.getenv("MAIL_SERVER")
+    or ("smtp.gmail.com" if SMTP_PROVIDER == "gmail" else "")
+    or ("smtp-relay.brevo.com" if SMTP_PROVIDER == "brevo" else "")
+    or ("smtp.sendgrid.net" if SMTP_PROVIDER == "sendgrid" else "")
+).strip()
+SMTP_PORT = int(
+    os.getenv("SMTP_PORT")
+    or os.getenv("MAIL_PORT")
+    or ("465" if _read_bool_env("SMTP_USE_SSL", _read_bool_env("MAIL_USE_SSL", False)) else "")
+    or "587"
+)
+SMTP_USERNAME = (
+    os.getenv("SMTP_USERNAME")
+    or os.getenv("MAIL_USERNAME")
+    or os.getenv("BREVO_SMTP_LOGIN")
+    or os.getenv("SENDGRID_SMTP_USERNAME")
+    or ("apikey" if SMTP_PROVIDER == "sendgrid" else "")
+).strip()
+SMTP_PASSWORD = (
+    os.getenv("SMTP_PASSWORD")
+    or os.getenv("MAIL_PASSWORD")
+    or os.getenv("BREVO_SMTP_KEY")
+    or os.getenv("SENDGRID_API_KEY")
+    or os.getenv("SENDGRID_SMTP_PASSWORD")
+    or ""
+)
 SMTP_FROM_EMAIL = (os.getenv("SMTP_FROM_EMAIL") or os.getenv("MAIL_DEFAULT_SENDER") or SUPPORT_EMAIL or SMTP_USERNAME).strip()
 SMTP_USE_TLS = _read_bool_env("SMTP_USE_TLS", _read_bool_env("MAIL_USE_TLS", True))
+SMTP_USE_SSL = _read_bool_env("SMTP_USE_SSL", _read_bool_env("MAIL_USE_SSL", False))

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import re
 import secrets
 import smtplib
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,9 @@ from config import (
     SMTP_HOST,
     SMTP_PASSWORD,
     SMTP_PORT,
+    SMTP_PROVIDER,
     SMTP_USERNAME,
+    SMTP_USE_SSL,
     SMTP_USE_TLS,
 )
 from db.database import database
@@ -63,12 +66,14 @@ class WebPasswordResetService:
         else:
             try:
                 self._send_reset_email(normalized_email, otp, expires_at)
-            except Exception:
-                logger.exception(
-                    "Password reset email send failed | user_id=%s email=%s reset_id=%s",
+            except Exception as exc:
+                logger.error(
+                    "Password reset email send failed | user_id=%s email=%s reset_id=%s error_type=%s error_message=%s",
                     user.get("user_id"),
                     normalized_email,
                     reset_id,
+                    type(exc).__name__,
+                    self._sanitize_exception_message(exc),
                 )
                 return {
                     "ok": False,
@@ -231,18 +236,67 @@ class WebPasswordResetService:
     def is_local_dev_mode(self) -> bool:
         return PASSWORD_RESET_LOCAL_DEV_OTP or APP_ENV != "production"
 
+    def validate_smtp_configuration(self) -> dict:
+        snapshot = self._smtp_config_snapshot()
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if self.is_local_dev_mode():
+            warnings.append("password reset emails are bypassed because local/dev OTP mode is enabled")
+
+        if not snapshot["dev_mode"]:
+            if not snapshot["host"]:
+                errors.append("missing SMTP host")
+            if not snapshot["from_email"]:
+                errors.append("missing SMTP from email")
+            if snapshot["requires_auth"] and not snapshot["password_configured"]:
+                errors.append("SMTP username is configured but SMTP password is missing")
+            if snapshot["use_tls"] and snapshot["use_ssl"]:
+                errors.append("SMTP_USE_TLS and SMTP_USE_SSL cannot both be enabled")
+            if snapshot["port"] <= 0:
+                errors.append("SMTP port must be a positive integer")
+        if snapshot["provider"] == "gmail" and snapshot["port"] not in {465, 587}:
+            warnings.append("Gmail usually expects port 587 with TLS or 465 with SSL")
+        if snapshot["provider"] == "brevo" and snapshot["port"] != 587:
+            warnings.append("Brevo usually expects port 587 with TLS")
+        if snapshot["provider"] == "sendgrid" and snapshot["username"] != "apikey":
+            warnings.append("SendGrid usually expects SMTP username 'apikey'")
+
+        return {"snapshot": snapshot, "errors": errors, "warnings": warnings}
+
+    def log_smtp_configuration_status(self) -> None:
+        status = self.validate_smtp_configuration()
+        snapshot = status["snapshot"]
+        logger.info(
+            "SMTP startup configuration | provider=%s host=%s port=%s tls=%s ssl=%s from_email=%s username_configured=%s password_configured=%s dev_mode=%s",
+            snapshot["provider"],
+            snapshot["host"] or "-",
+            snapshot["port"],
+            snapshot["use_tls"],
+            snapshot["use_ssl"],
+            snapshot["from_email"] or "-",
+            snapshot["username_configured"],
+            snapshot["password_configured"],
+            snapshot["dev_mode"],
+        )
+        for warning in status["warnings"]:
+            logger.warning("SMTP startup validation warning | %s", warning)
+        for error in status["errors"]:
+            logger.error("SMTP startup validation error | %s", error)
+
     def _send_reset_email(self, recipient_email: str, otp: str, expires_at: datetime) -> None:
-        if not SMTP_HOST or not SMTP_PORT or not SMTP_FROM_EMAIL:
-            raise ValueError("SMTP is not configured for password reset emails.")
-        if SMTP_USERNAME and not SMTP_PASSWORD:
-            raise ValueError("SMTP username is configured but SMTP password is missing.")
+        status = self.validate_smtp_configuration()
+        if status["errors"]:
+            raise ValueError("SMTP configuration invalid: " + "; ".join(status["errors"]))
 
         logger.info(
-            "Password reset email send attempted | email=%s smtp_host=%s smtp_port=%s tls=%s smtp_user_configured=%s from_email=%s",
+            "Password reset email send attempted | email=%s smtp_provider=%s smtp_host=%s smtp_port=%s tls=%s ssl=%s smtp_user_configured=%s from_email=%s",
             recipient_email,
+            SMTP_PROVIDER or self._guess_provider(SMTP_HOST),
             SMTP_HOST,
             SMTP_PORT,
             SMTP_USE_TLS,
+            SMTP_USE_SSL,
             bool(SMTP_USERNAME),
             SMTP_FROM_EMAIL,
         )
@@ -259,16 +313,57 @@ class WebPasswordResetService:
             )
         )
 
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
-            smtp.ehlo()
-            if SMTP_USE_TLS:
-                smtp.starttls()
+        if SMTP_USE_SSL:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
                 smtp.ehlo()
-            if SMTP_USERNAME:
-                smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-            smtp.send_message(message)
+                if SMTP_USERNAME:
+                    smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+                smtp.send_message(message)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
+                smtp.ehlo()
+                if SMTP_USE_TLS:
+                    smtp.starttls()
+                    smtp.ehlo()
+                if SMTP_USERNAME:
+                    smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+                smtp.send_message(message)
 
         logger.info("Password reset email send succeeded | email=%s", recipient_email)
+
+    def _smtp_config_snapshot(self) -> dict:
+        provider = SMTP_PROVIDER or self._guess_provider(SMTP_HOST)
+        return {
+            "provider": provider or "generic",
+            "host": SMTP_HOST,
+            "port": int(SMTP_PORT or 0),
+            "use_tls": bool(SMTP_USE_TLS),
+            "use_ssl": bool(SMTP_USE_SSL),
+            "from_email": SMTP_FROM_EMAIL,
+            "username": SMTP_USERNAME,
+            "username_configured": bool(SMTP_USERNAME),
+            "password_configured": bool(SMTP_PASSWORD),
+            "requires_auth": bool(SMTP_USERNAME),
+            "dev_mode": self.is_local_dev_mode(),
+        }
+
+    def _guess_provider(self, host: str) -> str:
+        normalized_host = (host or "").strip().lower()
+        if "gmail" in normalized_host:
+            return "gmail"
+        if "brevo" in normalized_host or "sendinblue" in normalized_host:
+            return "brevo"
+        if "sendgrid" in normalized_host:
+            return "sendgrid"
+        return "generic"
+
+    def _sanitize_exception_message(self, exc: Exception) -> str:
+        message = str(exc) or exc.__class__.__name__
+        for secret in {SMTP_PASSWORD, SECRET_KEY}:
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+        message = re.sub(r"(?i)(password|pass|api[_ -]?key|token)(\s*[:=]\s*)([^\s,;]+)", r"\1\2[REDACTED]", message)
+        return message[:500]
 
     def _hash_secret(self, reset_id: str, value: str) -> str:
         return hmac.new(

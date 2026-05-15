@@ -25,6 +25,7 @@ from routes.premium import premium_blueprint
 from routes.quiz import quiz_blueprint
 from services.bootstrap_service import bootstrap_application
 from services.web_identity_service import web_identity_service
+from services.web_password_reset_service import web_password_reset_service
 from utils.logging_utils import get_logger, setup_logging
 
 
@@ -55,6 +56,7 @@ def create_app() -> Flask:
         DATABASE_HOST or "sqlite-local",
         DATABASE_PORT or "-",
     )
+    web_password_reset_service.log_smtp_configuration_status()
 
     try:
         database.initialize()
