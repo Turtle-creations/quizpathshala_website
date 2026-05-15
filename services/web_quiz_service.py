@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import random
+import secrets
 import time
 
 from config import DEFAULT_QUESTION_TIME
@@ -17,6 +18,8 @@ class WebQuizService:
     MAX_QUESTIONS_PER_QUIZ = 100
     SESSION_STORAGE_KEY = "active_quiz_session"
     ACTIVE_SESSION_TABLE = "web_quiz_sessions"
+    FULL_SET_EXAM_TITLE = "SSE"
+    FULL_SET_TITLE = "Set-1"
 
     def __init__(self) -> None:
         self.sessions: dict[int, dict] = {}
@@ -54,21 +57,32 @@ class WebQuizService:
         if not set_item:
             return None, "This quiz set is not available."
 
+        exam_item = exam_service.get_exam(int(set_item.get("exam_id") or 0))
+        self.clear_session(user_id)
+
         locked = bool(int(set_item.get("is_premium_locked", 0)))
         if locked and not (premium_service.is_premium(user_id) or user_service.is_admin(user_id)):
             return None, "This quiz set is premium-only."
-        if int(requested_count) not in self.QUIZ_COUNT_OPTIONS:
+
+        use_full_set = self._should_force_full_set(exam_item, set_item)
+        if not use_full_set and int(requested_count) not in self.QUIZ_COUNT_OPTIONS:
             return None, "Please choose 20, 50, or 100 questions."
 
         question_pool = [self._prepare_question(item) for item in exam_service.get_questions(set_id)]
         if not question_pool:
             return None, "No questions are available in this set yet."
 
-        actual_count = min(max(int(requested_count), 1), len(question_pool), self.MAX_QUESTIONS_PER_QUIZ)
         random.shuffle(question_pool)
-        questions = question_pool[:actual_count]
+        if use_full_set:
+            actual_count = len(question_pool)
+            questions = question_pool
+        else:
+            actual_count = min(max(int(requested_count), 1), len(question_pool), self.MAX_QUESTIONS_PER_QUIZ)
+            questions = question_pool[:actual_count]
 
         self.sessions[user_id] = {
+            "session_id": secrets.token_urlsafe(12),
+            "user_id": user_id,
             "set_id": set_id,
             "set_title": set_item.get("title") or "Quiz Set",
             "requested_count": actual_count,
@@ -88,11 +102,14 @@ class WebQuizService:
         }
         self._persist_session(user_id)
         self.logger.info(
-            "Quiz start | user_id=%s set_id=%s requested_count=%s actual_count=%s",
+            "Quiz start | user_id=%s set_id=%s requested_count=%s actual_count=%s exam_title=%s set_title=%s force_full_set=%s",
             user_id,
             set_id,
             requested_count,
             actual_count,
+            exam_item.get("title") if exam_item else None,
+            set_item.get("title"),
+            use_full_set,
         )
         return self.sessions[user_id], None
 
@@ -110,6 +127,23 @@ class WebQuizService:
                 restored.get("index"),
             )
         return restored
+
+    def build_session_reference(self, user_id: int) -> dict | None:
+        session = self.get_session(user_id)
+        if not session:
+            return None
+        return {
+            "session_id": session.get("session_id") or "",
+            "user_id": int(session.get("user_id") or user_id),
+            "set_id": int(session.get("set_id") or 0),
+        }
+
+    def load_completed_summary(self, user_id: int) -> dict | None:
+        payload = self._load_persisted_payload(user_id)
+        if not payload:
+            return None
+        summary = payload.get("completed_summary")
+        return deepcopy(summary) if isinstance(summary, dict) else None
 
     def build_session_snapshot(self, user_id: int) -> dict | None:
         quiz_session = self.get_session(user_id)
@@ -332,8 +366,8 @@ class WebQuizService:
             skipped_count=summary["skipped"],
             ended_reason=ended_reason,
         )
+        self._persist_completed_summary(user_id, session, summary)
         self.sessions.pop(user_id, None)
-        self._delete_persisted_session(user_id)
         return summary
 
     def clear_session(self, user_id: int) -> None:
@@ -422,8 +456,20 @@ class WebQuizService:
         session = self.sessions.get(user_id)
         if not session:
             return
+        self._persist_payload(user_id, session)
 
-        payload = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
+    def _persist_completed_summary(self, user_id: int, session: dict, summary: dict) -> None:
+        payload = {
+            "session_id": session.get("session_id") or secrets.token_urlsafe(12),
+            "user_id": int(session.get("user_id") or user_id),
+            "set_id": int(session.get("set_id") or 0),
+            "set_title": session.get("set_title") or summary.get("set_title") or "Quiz Set",
+            "completed_summary": summary,
+        }
+        self._persist_payload(user_id, payload)
+
+    def _persist_payload(self, user_id: int, payload_data: dict) -> None:
+        payload = json.dumps(payload_data, ensure_ascii=False, separators=(",", ":"))
         updated_at = self._timestamp_now()
         with database.connection() as conn:
             self._ensure_active_session_table(conn)
@@ -433,7 +479,7 @@ class WebQuizService:
                 (user_id, payload, updated_at),
             )
 
-    def _load_persisted_session(self, user_id: int) -> dict | None:
+    def _load_persisted_payload(self, user_id: int) -> dict | None:
         with database.connection() as conn:
             self._ensure_active_session_table(conn)
             row = conn.execute(
@@ -445,15 +491,19 @@ class WebQuizService:
             return None
 
         try:
-            payload = json.loads(row["session_payload"] if isinstance(row, dict) else row[0])
+            return json.loads(row["session_payload"] if isinstance(row, dict) else row[0])
         except (TypeError, ValueError, json.JSONDecodeError):
             self.logger.exception("Stored quiz session payload could not be decoded | user_id=%s", user_id)
             self._delete_persisted_session(user_id)
             return None
 
+    def _load_persisted_session(self, user_id: int) -> dict | None:
+        payload = self._load_persisted_payload(user_id)
+        if not payload:
+            return None
+
         session = self._normalize_loaded_session(payload)
         if not session:
-            self._delete_persisted_session(user_id)
             return None
         return session
 
@@ -475,6 +525,8 @@ class WebQuizService:
 
         try:
             normalized = {
+                "session_id": payload.get("session_id") or secrets.token_urlsafe(12),
+                "user_id": int(payload.get("user_id") or 0),
                 "set_id": int(payload.get("set_id") or 0),
                 "set_title": payload.get("set_title") or "Quiz Set",
                 "requested_count": int(payload.get("requested_count") or len(questions)),
@@ -519,6 +571,11 @@ class WebQuizService:
             "number": answered_index + 1,
             "total": len(questions),
         }
+
+    def _should_force_full_set(self, exam_item: dict | None, set_item: dict | None) -> bool:
+        if not exam_item or not set_item:
+            return False
+        return (str(exam_item.get("title") or "").strip().upper() == self.FULL_SET_EXAM_TITLE and str(set_item.get("title") or "").strip() == self.FULL_SET_TITLE)
 
     def _prepare_question(self, question: dict) -> dict:
         item = deepcopy(question)

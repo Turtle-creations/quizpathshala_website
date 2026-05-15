@@ -17,7 +17,7 @@ def _quiz_session_snapshot() -> dict:
 
 def _store_quiz_session_snapshot(user_id: int) -> dict:
     snapshot = web_quiz_service.build_session_snapshot(user_id) or {}
-    session[web_quiz_service.SESSION_STORAGE_KEY] = snapshot
+    session[web_quiz_service.SESSION_STORAGE_KEY] = web_quiz_service.build_session_reference(user_id) or {}
     return snapshot
 
 
@@ -27,7 +27,8 @@ def _clear_quiz_session_snapshot() -> None:
 
 def _restart_quiz_session(user_id: int, *, message: str) -> None:
     web_quiz_service.clear_session(user_id)
-    session["active_result"] = None
+    session.pop("active_result", None)
+    session.pop("last_quiz_result", None)
     _clear_quiz_session_snapshot()
     flash(message, "error")
 
@@ -38,7 +39,6 @@ def _handle_play_action_result(user_id: int, result: dict | None, *, action: str
         _restart_quiz_session(user_id, message="Your quiz session expired or was invalid. Please start again.")
         return redirect(url_for("quiz.quiz_start"))
 
-    session["active_result"] = result
     snapshot = _store_quiz_session_snapshot(user_id)
     logger.info("Quiz answer route | user_id=%s index=%s action=%s", user_id, snapshot.get("index"), action)
     return redirect(url_for("quiz.play"))
@@ -66,8 +66,8 @@ def quiz_start():
             flash(error, "error")
             return redirect(url_for("quiz.quiz_start"))
 
-        session["active_result"] = None
-        session["last_quiz_result"] = None
+        session.pop("active_result", None)
+        session.pop("last_quiz_result", None)
         snapshot = _store_quiz_session_snapshot(user_id)
         logger.info("Quiz start route | user_id=%s set_id=%s total=%s", user_id, set_id, snapshot.get("total"))
         flash(
@@ -148,30 +148,28 @@ def play():
             return _handle_play_action_result(user_id, result, action="timeout")
 
         if action == "next":
-            session["active_result"] = None
             if web_quiz_service.next_question(user_id):
                 snapshot = _store_quiz_session_snapshot(user_id)
                 logger.info("Quiz next route | user_id=%s next_index=%s", user_id, snapshot.get("index"))
                 return redirect(url_for("quiz.play"))
-            summary = web_quiz_service.submit_quiz(user_id, ended_reason="completed")
-            session["last_quiz_result"] = summary
+            web_quiz_service.submit_quiz(user_id, ended_reason="completed")
+            session.pop("last_quiz_result", None)
             _clear_quiz_session_snapshot()
             return redirect(url_for("quiz.result"))
 
         if action == "submit":
-            summary = web_quiz_service.submit_quiz(user_id, ended_reason="submitted")
-            session["last_quiz_result"] = summary
-            session["active_result"] = None
+            web_quiz_service.submit_quiz(user_id, ended_reason="submitted")
+            session.pop("last_quiz_result", None)
+            session.pop("active_result", None)
             _clear_quiz_session_snapshot()
             return redirect(url_for("quiz.result"))
 
         return redirect(url_for("quiz.play"))
 
-    quiz_snapshot = _quiz_session_snapshot() or _store_quiz_session_snapshot(user_id)
-    active_result = session.get("active_result")
-    if not active_result and quiz_snapshot.get("last_result") and quiz_snapshot.get("awaiting_next"):
-        active_result = quiz_snapshot.get("last_result")
-        session["active_result"] = active_result
+    quiz_snapshot = web_quiz_service.build_session_snapshot(user_id) or {}
+    if quiz_snapshot:
+        session[web_quiz_service.SESSION_STORAGE_KEY] = web_quiz_service.build_session_reference(user_id) or {}
+    active_result = quiz_snapshot.get("last_result") if quiz_snapshot.get("awaiting_next") else None
 
     logger.info("Quiz play render | user_id=%s index=%s total=%s has_result=%s", user_id, quiz_snapshot.get("index"), quiz_snapshot.get("total"), bool(active_result))
     question = quiz_snapshot.get("current_question")
@@ -184,9 +182,9 @@ def play():
             "image_path": active_result.get("image_path"),
         }
     if not question:
-        summary = web_quiz_service.submit_quiz(user_id, ended_reason="completed")
-        session["last_quiz_result"] = summary
-        session["active_result"] = None
+        web_quiz_service.submit_quiz(user_id, ended_reason="completed")
+        session.pop("last_quiz_result", None)
+        session.pop("active_result", None)
         _clear_quiz_session_snapshot()
         return redirect(url_for("quiz.result"))
 
@@ -213,7 +211,7 @@ def result():
         flash("Please log in to continue.", "error")
         return redirect(url_for("auth.login"))
 
-    summary = session.get("last_quiz_result")
+    summary = web_quiz_service.load_completed_summary(user_id) or session.get("last_quiz_result")
     if not summary:
         flash("No quiz result found. Start a quiz first.", "error")
         return redirect(url_for("quiz.quiz_start"))

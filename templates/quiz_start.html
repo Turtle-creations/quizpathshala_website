@@ -37,6 +37,9 @@
                         </div>
                         <div class="quiz-set-actions">
                             <select name="question_count">
+                                {% if exam.title == "SSE" and set_item.title == "Set-1" and set_item.question_count %}
+                                <option value="{{ set_item.question_count }}">All {{ set_item.question_count }} Questions</option>
+                                {% endif %}
                                 {% for count in question_counts %}
                                 <option value="{{ count }}">{{ count }} Questions</option>
                                 {% endfor %}
