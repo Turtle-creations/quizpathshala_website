@@ -1,33 +1,25 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
-<section class="page-hero auth-hero">
-    <div class="container narrow auth-shell">
-        <div class="auth-panel auth-panel-copy">
-            <span class="eyebrow">Login</span>
-            <h1>Sign in to QuizPathshala</h1>
-            <p>Use your email or mobile number with your password to access your account, continue practice, and review your latest progress.</p>
-            <div class="hero-trust-row auth-trust-row">
-                <span>Secure account access</span>
-                <span>Instant quiz dashboard</span>
-                <span>Hindi friendly interface</span>
-            </div>
-        </div>
-        <form accept-charset="UTF-8" method="post" class="form-card auth-card premium-form-card">
-            <div class="form-card-header">
-                <h2>Welcome back</h2>
-                <p>Log in to resume your preparation.</p>
-            </div>
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Login</span>
+        <h1>Sign in to QuizPathshala</h1>
+        <p>Use your email or mobile number with your password to access your account.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <form accept-charset="UTF-8" method="post" class="form-card">
             <label for="login_identifier">Email / Mobile</label>
             <input id="login_identifier" name="login_identifier" type="text" required>
             <label for="password">Password</label>
             <input id="password" name="password" type="password" required>
             <button class="button button-primary" type="submit">Log In</button>
-            <div class="auth-links-stack">
-                <p><a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a></p>
-                <p>Admin and super admin users will be redirected to the admin dashboard after login.</p>
-                <p>New here? <a href="{{ url_for('auth.register') }}">Register New User</a></p>
-            </div>
+            <p><a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a></p>
+            <p>Admin and super admin users will be redirected to the admin dashboard after login.</p>
+            <p>New here? <a href="{{ url_for('auth.register') }}">Register New User</a></p>
         </form>
     </div>
 </section>

@@ -7,9 +7,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var shell = header.querySelector("[data-navbar-shell]");
     var logo = header.querySelector("[data-navbar-logo]");
     var logoMark = header.querySelector(".brand-mark");
-    var navPanel = header.querySelector("[data-navbar-panel]");
-    var navToggle = header.querySelector("[data-navbar-toggle]");
-    var navLinks = Array.prototype.slice.call(header.querySelectorAll(".site-nav a"));
     var navItems = Array.prototype.slice.call(header.querySelectorAll(".site-nav a, .nav-actions > *"));
     var collapseThreshold = 80;
     var expandThreshold = 40;
@@ -18,11 +15,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var lastRunAt = 0;
     var ticking = false;
     var isCollapsed = false;
-    var isMobileOpen = false;
-
-    function isMobileViewport() {
-        return window.matchMedia("(max-width: 980px)").matches;
-    }
 
     function setAnimationMetrics() {
         if (!shell || !logoMark) {
@@ -38,7 +30,7 @@ document.addEventListener("DOMContentLoaded", function () {
         shell.style.setProperty("--nav-expanded-width", expandedWidth + "px");
         shell.style.setProperty("--nav-collapsed-size", collapsedSize + "px");
 
-        if (isCollapsed && !isMobileViewport()) {
+        if (isCollapsed) {
             header.classList.add("navbar-collapsed");
         }
     }
@@ -52,26 +44,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function syncToggleState() {
-        if (!navToggle) {
-            return;
-        }
-        navToggle.setAttribute("aria-expanded", isMobileOpen ? "true" : "false");
-    }
-
-    function setMobileOpen(nextState) {
-        isMobileOpen = Boolean(nextState);
-        header.classList.toggle("navbar-open", isMobileOpen);
-        syncToggleState();
-    }
-
     function applyNavbarState(shouldCollapse) {
-        if (isMobileViewport()) {
-            header.classList.remove("navbar-collapsed");
-            isCollapsed = false;
-            return;
-        }
-
         if (shouldCollapse === isCollapsed) {
             return;
         }
@@ -81,14 +54,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function processScroll() {
-        if (isMobileViewport()) {
-            header.classList.remove("navbar-collapsed");
-            isCollapsed = false;
-            ticking = false;
-            lastRunAt = performance.now();
-            return;
-        }
-
         var currentScrollY = lastKnownScrollY;
 
         if (!isCollapsed && currentScrollY >= collapseThreshold) {
@@ -113,49 +78,19 @@ document.addEventListener("DOMContentLoaded", function () {
         window.requestAnimationFrame(processScroll);
     }
 
-    function syncResponsiveState() {
-        if (isMobileViewport()) {
-            applyNavbarState(false);
-        } else {
-            setMobileOpen(false);
-            lastKnownScrollY = window.scrollY || 0;
-            processScroll();
-        }
-        setAnimationMetrics();
-    }
-
     window.addEventListener("scroll", requestScrollUpdate, { passive: true });
 
     window.addEventListener("resize", function () {
-        window.requestAnimationFrame(syncResponsiveState);
-    });
-
-    if (navToggle && navPanel) {
-        navToggle.addEventListener("click", function () {
-            setMobileOpen(!isMobileOpen);
+        window.requestAnimationFrame(function () {
+            setAnimationMetrics();
+            lastKnownScrollY = window.scrollY || 0;
+            processScroll();
         });
-    }
-
-    navLinks.forEach(function (link) {
-        link.addEventListener("click", function () {
-            if (isMobileViewport()) {
-                setMobileOpen(false);
-            }
-        });
-    });
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && isMobileOpen) {
-            setMobileOpen(false);
-            if (navToggle) {
-                navToggle.focus();
-            }
-        }
     });
 
     if (logo) {
         logo.addEventListener("click", function (event) {
-            if (!isMobileViewport() && isCollapsed) {
+            if (isCollapsed) {
                 event.preventDefault();
                 event.stopPropagation();
                 applyNavbarState(false);
@@ -163,16 +98,24 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         logo.addEventListener("touchstart", function () {
-            if (!isMobileViewport() && isCollapsed) {
+            if (isCollapsed) {
                 applyNavbarState(false);
             }
         }, { passive: true });
+
+        logo.addEventListener("keydown", function (event) {
+            if (isCollapsed && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                applyNavbarState(false);
+            }
+        });
     }
 
     setItemDelays();
-    setMobileOpen(false);
-    syncResponsiveState();
+    setAnimationMetrics();
+    processScroll();
 });
+
 
 document.addEventListener("DOMContentLoaded", function () {
     var protectedForms = Array.prototype.slice.call(document.querySelectorAll("form[data-disable-on-submit='true']"));
@@ -197,6 +140,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 });
+
 
 document.addEventListener("DOMContentLoaded", function () {
     if (!document.querySelector("[data-admin-dashboard='true']")) {

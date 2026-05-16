@@ -1,28 +1,24 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <section class="page-hero">
     <div class="container narrow">
         <span class="eyebrow">Result</span>
         <h1>Quiz summary</h1>
-        <p>{{ current_set.title if current_set else "Quiz" }} completed with a complete breakdown of score, accuracy, and answer review below.</p>
+        <p>{{ current_set.title if current_set else "Quiz" }} completed with full answer review below.</p>
     </div>
 </section>
 
 <section class="section">
     <div class="container narrow">
-        <div class="card-grid score-grid score-grid-extended result-summary-grid-premium">
-            <article class="info-card stat-card-primary">
+        <div class="card-grid score-grid">
+            <article class="info-card">
                 <h3>Score</h3>
                 <p class="stat">{{ "%.2f"|format(summary.score) }}</p>
             </article>
             <article class="info-card">
                 <h3>Accuracy</h3>
                 <p class="stat">{{ "%.2f"|format(summary.accuracy) }}%</p>
-            </article>
-            <article class="info-card">
-                <h3>Attempted</h3>
-                <p class="stat">{{ summary.attempted }}</p>
             </article>
             <article class="info-card">
                 <h3>Correct</h3>
@@ -32,33 +28,15 @@
                 <h3>Wrong</h3>
                 <p class="stat">{{ summary.wrong }}</p>
             </article>
-            <article class="info-card">
-                <h3>Skipped</h3>
-                <p class="stat">{{ summary.skipped }}</p>
-            </article>
         </div>
-
-        <div class="result-details-card data-card">
-            <div class="result-details-grid">
-                <div>
-                    <span class="answer-review-label">Negative marking</span>
-                    <p class="answer-review-value">-{{ "%.2f"|format(summary.negative_marking) }}</p>
-                </div>
-                <div>
-                    <span class="answer-review-label">Ended reason</span>
-                    <p class="answer-review-value">{{ summary.ended_reason.replace('_', ' ')|title }}</p>
-                </div>
-                <div>
-                    <span class="answer-review-label">Started at</span>
-                    <p class="answer-review-value">{{ summary.started_at or '-' }}</p>
-                </div>
-                <div>
-                    <span class="answer-review-label">Completed at</span>
-                    <p class="answer-review-value">{{ summary.completed_at or '-' }}</p>
-                </div>
-            </div>
+        <div class="result-details text-page">
+            <p><strong>Attempted:</strong> {{ summary.attempted }}</p>
+            <p><strong>Skipped:</strong> {{ summary.skipped }}</p>
+            <p><strong>Negative marking:</strong> -{{ "%.2f"|format(summary.negative_marking) }}</p>
+            <p><strong>Ended reason:</strong> {{ summary.ended_reason.replace('_', ' ')|title }}</p>
+            <p><strong>Started at:</strong> {{ summary.started_at or '-' }}</p>
+            <p><strong>Completed at:</strong> {{ summary.completed_at or '-' }}</p>
         </div>
-
         <div class="hero-actions">
             <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Play Quiz Again</a>
             <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">Upgrade to Premium</a>
@@ -69,43 +47,23 @@
 <section class="section">
     <div class="container narrow">
         <div class="data-card">
-            <div class="section-heading">
-                <h2>Attempted question review</h2>
-                <p>Each attempted answer is grouped into clean review cards so learners can revise quickly.</p>
-            </div>
+            <h2>Attempted question review</h2>
             {% for item in attempted_review_items %}
-            <article class="info-card review-item-card">
-                <div class="review-item-head">
-                    <p class="review-item-title"><strong>Q{{ item.number }}.</strong> {{ item.question_text }}</p>
-                    <span class="result-badge {% if item.correct %}result-good{% else %}result-bad{% endif %}">{{ 'Correct' if item.correct else 'Wrong' }}</span>
-                </div>
+            <article class="info-card">
+                <p><strong>Q{{ item.number }}.</strong> {{ item.question_text }}</p>
                 {% if item.image_path %}
                 <img class="question-image" src="{{ url_for('media_file', relative_path=item.image_path) }}" alt="Question illustration">
                 {% endif %}
-                <div class="answer-review-shell answer-review-grid">
-                    <article class="answer-review-card answer-review-card-neutral">
-                        <span class="answer-review-label">Your answer</span>
-                        <p class="answer-review-value">{{ item.selected_text or 'Not answered' }}</p>
-                    </article>
-                    <article class="answer-review-card answer-review-card-correct">
-                        <span class="answer-review-label">Correct answer</span>
-                        <p class="answer-review-value">{{ item.correct_answer }}</p>
-                    </article>
-                </div>
+                <p><strong>Your answer:</strong> {{ item.selected_text or 'Not answered' }}</p>
+                <p><strong>Correct answer:</strong> {{ item.correct_answer }}</p>
+                <p><strong>Status:</strong> <span class="answer-status {% if item.correct %}answer-status-correct{% else %}answer-status-wrong{% endif %}">{{ 'Correct' if item.correct else 'Wrong' }}</span></p>
                 {% if item.explanation %}
-                <article class="answer-review-card answer-review-card-neutral">
-                    <span class="answer-review-label">Explanation</span>
-                    <p class="answer-review-value">{{ item.explanation }}</p>
-                </article>
+                <p><strong>Explanation:</strong> {{ item.explanation }}</p>
                 {% endif %}
             </article>
             {% else %}
             <p>No attempted questions were recorded for this attempt.</p>
             {% endfor %}
-            <article class="answer-review-card answer-review-card-neutral report-placeholder-card">
-                <span class="answer-review-label">Future improvement area</span>
-                <p class="answer-review-value">A report-wrong-question action can be added here later without changing the surrounding review layout.</p>
-            </article>
         </div>
     </div>
 </section>
@@ -113,38 +71,33 @@
 <section class="section">
     <div class="container narrow">
         <div class="data-card">
-            <div class="section-heading">
-                <h2>Recent performance trend</h2>
-                <p>Use recent attempts to spot consistency, accuracy shifts, and improvement over time.</p>
-            </div>
-            <div class="table-shell">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Set</th>
-                            <th>Score</th>
-                            <th>Accuracy</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for attempt in performance.recent_attempts %}
-                        <tr>
-                            <td>{{ attempt.created_at }}</td>
-                            <td>{{ attempt.set_title or '-' }}</td>
-                            <td>{{ "%.2f"|format(attempt.score) }}</td>
-                            <td>{{ "%.2f"|format(attempt.accuracy) }}%</td>
-                            <td>{{ attempt.ended_reason.replace('_', ' ')|title }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5">No recent attempts found.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <h2>Recent performance trend</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Set</th>
+                        <th>Score</th>
+                        <th>Accuracy</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for attempt in performance.recent_attempts %}
+                    <tr>
+                        <td>{{ attempt.created_at }}</td>
+                        <td>{{ attempt.set_title or '-' }}</td>
+                        <td>{{ "%.2f"|format(attempt.score) }}</td>
+                        <td>{{ "%.2f"|format(attempt.accuracy) }}%</td>
+                        <td>{{ attempt.ended_reason.replace('_', ' ')|title }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5">No recent attempts found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </section>

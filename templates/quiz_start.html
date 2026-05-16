@@ -1,17 +1,17 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
 <section class="page-hero">
     <div class="container narrow">
         <span class="eyebrow">Quiz Hub</span>
         <h1>Select exam, category, and set</h1>
-        <p>Free and premium quizzes use the same shared question bank as the Telegram bot, with category-wise practice and timer-based scoring on web.</p>
+        <p>Free and premium quizzes now use the same shared question bank as the Telegram bot, with category-wise practice and timer-based scoring on web.</p>
     </div>
 </section>
 
 <section class="section">
-    <div class="container form-grid quiz-discovery-grid">
-        <div class="text-page section-contrast quiz-discovery-copy">
+    <div class="container form-grid">
+        <div class="text-page">
             <h2>How this works</h2>
             <p>Every quiz follows the same QuizPathshala scoring model: +1 for correct answers, -0.25 for wrong answers, and a countdown for each question.</p>
             <p>Premium-locked sets stay protected until your account is activated by the verified Razorpay webhook flow.</p>
@@ -19,36 +19,23 @@
                 <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">See Premium Plans</a>
             </div>
         </div>
-        <div class="form-card quiz-selection-shell">
-            <div class="section-heading">
-                <h2>Available exams and sets</h2>
-                <p>Choose an exam, review the available sets, and launch practice with the question count you want.</p>
-            </div>
+        <div class="form-card">
+            <h2>Available exams and sets</h2>
             {% for exam in catalog %}
-            <div class="catalog-card compact-card exam-catalog-card">
-                <div class="review-item-head exam-card-head">
-                    <div>
-                        <h3>{{ exam.title }}</h3>
-                        <p>{{ exam.description or "Exam practice category" }}</p>
-                    </div>
-                    <div class="exam-card-metrics">
-                        <span class="plan-tag">{{ exam.set_count }} sets</span>
-                        <span class="plan-tag">{{ exam.question_count }} questions</span>
-                    </div>
-                </div>
+            <div class="catalog-card compact-card">
+                <h3>{{ exam.title }}</h3>
+                <p>{{ exam.description or "Exam practice category" }}</p>
+                <p><strong>{{ exam.set_count }}</strong> sets | <strong>{{ exam.question_count }}</strong> total questions</p>
                 {% for set_item in exam.sets %}
-                <form accept-charset="UTF-8" method="post" class="quiz-set-form quiz-set-form-card" data-disable-on-submit="true">
+                <form accept-charset="UTF-8" method="post" class="quiz-set-form" data-disable-on-submit="true">
                     <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
-                    <div class="quiz-set-row align-start">
-                        <div class="quiz-set-copy">
-                            <div class="review-item-head review-item-head-compact">
-                                <h4>{{ set_item.title }}</h4>
-                                <span class="plan-tag">{% if set_item.locked %}Premium{% else %}Free{% endif %}</span>
-                            </div>
+                    <div class="quiz-set-row">
+                        <div>
+                            <h4>{{ set_item.title }}</h4>
                             <p>{{ set_item.description or "Practice set" }}</p>
-                            <p>{{ set_item.question_count }} questions ready</p>
+                            <p>{{ set_item.question_count }} questions{% if set_item.locked %} | Premium only{% else %} | Free access{% endif %}</p>
                         </div>
-                        <div class="quiz-set-actions quiz-set-actions-stacked">
+                        <div class="quiz-set-actions">
                             <select name="question_count">
                                 {% if exam.title == "SSE" and set_item.title == "Set-1" and set_item.question_count %}
                                 <option value="{{ set_item.question_count }}">All {{ set_item.question_count }} Questions</option>
