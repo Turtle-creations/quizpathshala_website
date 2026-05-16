@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">{{ exam.title }}</span>
+        <h1>Select a set</h1>
+        <p>Only sets from {{ exam.title }} are shown here. Review your progress, latest attempt details, and start or continue the set you want.</p>
+        <div class="hero-actions">
+            <a class="button button-secondary" href="{{ url_for('quiz.quiz_start') }}">Back to Exams</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container form-grid">
+        <div class="text-page">
+            <h2>{{ exam.title }} overview</h2>
+            <p>{{ exam.description or "Choose a set and continue practicing in the same simple quiz flow." }}</p>
+            <div class="quiz-meta-grid">
+                <div class="quiz-meta-item">
+                    <span>Total sets</span>
+                    <strong>{{ exam.set_count or sets|length }}</strong>
+                </div>
+                <div class="quiz-meta-item">
+                    <span>Total questions</span>
+                    <strong>{{ exam.question_count or 0 }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="form-card">
+            <h2>{{ exam.title }} sets</h2>
+            {% for set_item in sets %}
+            <article class="catalog-card compact-card quiz-set-card">
+                <div class="quiz-set-card-head">
+                    <div>
+                        <h3>{{ set_item.title }}</h3>
+                        <p>{{ set_item.description or "Practice set" }}</p>
+                    </div>
+                    {% if set_item.active_state %}
+                    <span class="plan-tag">In Progress</span>
+                    {% elif set_item.locked and not set_item.has_access %}
+                    <span class="plan-tag">Premium</span>
+                    {% endif %}
+                </div>
+
+                <div class="quiz-set-meta-grid">
+                    <div class="quiz-meta-item">
+                        <span>Total questions</span>
+                        <strong>{{ set_item.question_count or 0 }}</strong>
+                    </div>
+                    <div class="quiz-meta-item">
+                        <span>User progress</span>
+                        <strong>{{ set_item.progress_text }}</strong>
+                    </div>
+                    <div class="quiz-meta-item">
+                        <span>Last attempted</span>
+                        <strong>
+                            {% if set_item.last_attempted_at %}
+                            {{ set_item.last_attempted_at|format_user_datetime(user) }}
+                            {% else %}
+                            Not attempted yet
+                            {% endif %}
+                        </strong>
+                    </div>
+                    <div class="quiz-meta-item">
+                        <span>Last marks</span>
+                        <strong>
+                            {% if set_item.latest_attempt %}
+                            {{ "%.2f"|format(set_item.latest_attempt.score) }}
+                            {% else %}
+                            Not available
+                            {% endif %}
+                        </strong>
+                    </div>
+                    <div class="quiz-meta-item">
+                        <span>Rank in set</span>
+                        <strong>
+                            {% if set_item.rank %}
+                            #{{ set_item.rank }}
+                            {% else %}
+                            Not available
+                            {% endif %}
+                        </strong>
+                    </div>
+                </div>
+
+                {% if set_item.latest_attempt %}
+                <p class="helper-text">
+                    Latest attempt: {{ set_item.latest_attempt.correct_count }} correct, {{ set_item.latest_attempt.wrong_count }} wrong, {{ set_item.latest_attempt.skipped_count }} skipped.
+                </p>
+                {% endif %}
+
+                {% if set_item.active_state %}
+                <div class="quiz-set-action-bar">
+                    <form accept-charset="UTF-8" method="post" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="continue">
+                        <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                        <button class="button button-primary" type="submit">Continue</button>
+                    </form>
+                </div>
+                {% else %}
+                <form accept-charset="UTF-8" method="post" class="quiz-set-form" data-disable-on-submit="true">
+                    <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                    <div class="quiz-set-action-bar">
+                        <select name="question_count">
+                            {% for option in set_item.question_count_options %}
+                            <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="button button-primary" type="submit" {% if not set_item.has_access %}disabled{% endif %}>
+                            {% if set_item.has_access %}{{ set_item.action_label }}{% else %}Premium Only{% endif %}
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+            </article>
+            {% else %}
+            <p>No sets are available for this exam yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}

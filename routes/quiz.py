@@ -1,8 +1,12 @@
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
+from db.database import database
 from utils.logging_utils import get_logger
 
 from routes.auth import login_required
+from services.exam_service_db import exam_service
+from services.premium_service_db import premium_service
+from services.user_service_db import user_service
 from services.web_identity_service import web_identity_service
 from services.web_quiz_service import web_quiz_service
 
@@ -44,6 +48,168 @@ def _handle_play_action_result(user_id: int, result: dict | None, *, action: str
     return redirect(url_for("quiz.play"))
 
 
+def _attempt_metrics(item: dict) -> dict:
+    attempted = int(item.get("correct_count") or 0) + int(item.get("wrong_count") or 0)
+    skipped = int(item.get("skipped_count") or 0)
+    requested_count = int(item.get("requested_count") or 0)
+    completed = attempted + skipped
+    score = float(item.get("correct_count") or 0) - (float(item.get("wrong_count") or 0) * 0.25)
+    accuracy = (float(item.get("correct_count") or 0) / attempted * 100) if attempted else 0.0
+    progress_percent = (completed / requested_count * 100) if requested_count else 0.0
+    return {
+        **item,
+        "attempted": attempted,
+        "completed": completed,
+        "score": score,
+        "accuracy": accuracy,
+        "progress_percent": progress_percent,
+    }
+
+
+def _attempt_rank_key(item: dict) -> tuple:
+    return (
+        float(item.get("score") or 0),
+        float(item.get("accuracy") or 0),
+        int(item.get("correct_count") or 0),
+        -int(item.get("wrong_count") or 0),
+        str(item.get("created_at") or ""),
+        int(item.get("attempt_id") or 0),
+    )
+
+
+def _load_user_attempts_for_exam(user_id: int, exam_id: int) -> list[dict]:
+    with database.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                qa.*,
+                s.title AS set_title,
+                e.title AS exam_title
+            FROM quiz_attempts qa
+            JOIN exam_sets s ON s.set_id = qa.set_id
+            JOIN exams e ON e.exam_id = s.exam_id
+            WHERE qa.user_id = ? AND s.exam_id = ?
+            ORDER BY qa.created_at DESC, qa.attempt_id DESC
+            """,
+            (user_id, exam_id),
+        ).fetchall()
+
+    return [_attempt_metrics(dict(row)) for row in rows]
+
+
+def _summarize_attempts_by_set(attempts: list[dict]) -> dict[int, dict]:
+    summaries: dict[int, dict] = {}
+    for attempt in attempts:
+        set_id = int(attempt.get("set_id") or 0)
+        bucket = summaries.setdefault(set_id, {"latest": attempt, "best": attempt})
+        if _attempt_rank_key(attempt) > _attempt_rank_key(bucket["best"]):
+            bucket["best"] = attempt
+    return summaries
+
+
+def _load_rank_map_for_exam(exam_id: int) -> dict[int, dict[int, int]]:
+    with database.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                qa.*,
+                s.exam_id
+            FROM quiz_attempts qa
+            JOIN exam_sets s ON s.set_id = qa.set_id
+            WHERE s.exam_id = ?
+            ORDER BY qa.created_at DESC, qa.attempt_id DESC
+            """,
+            (exam_id,),
+        ).fetchall()
+
+    best_attempts: dict[tuple[int, int], dict] = {}
+    for row in rows:
+        attempt = _attempt_metrics(dict(row))
+        key = (int(attempt.get("set_id") or 0), int(attempt.get("user_id") or 0))
+        current = best_attempts.get(key)
+        if current is None or _attempt_rank_key(attempt) > _attempt_rank_key(current):
+            best_attempts[key] = attempt
+
+    grouped: dict[int, list[dict]] = {}
+    for attempt in best_attempts.values():
+        grouped.setdefault(int(attempt.get("set_id") or 0), []).append(attempt)
+
+    rank_map: dict[int, dict[int, int]] = {}
+    for set_id, entries in grouped.items():
+        ordered = sorted(entries, key=_attempt_rank_key, reverse=True)
+        rank_map[set_id] = {
+            int(entry.get("user_id") or 0): index
+            for index, entry in enumerate(ordered, start=1)
+        }
+    return rank_map
+
+
+def _question_count_options_for_set(exam_item: dict, set_item: dict) -> list[dict]:
+    options = []
+    question_count = int(set_item.get("question_count") or 0)
+    if (
+        str(exam_item.get("title") or "").strip().upper() == web_quiz_service.FULL_SET_EXAM_TITLE
+        and str(set_item.get("title") or "").strip() == web_quiz_service.FULL_SET_TITLE
+        and question_count
+    ):
+        options.append({"value": question_count, "label": f"All {question_count} Questions"})
+
+    for count in web_quiz_service.QUIZ_COUNT_OPTIONS:
+        if not any(int(option["value"]) == int(count) for option in options):
+            options.append({"value": int(count), "label": f"{count} Questions"})
+    return options
+
+
+def _active_set_state(active_session: dict | None, set_id: int) -> dict | None:
+    if not active_session or int(active_session.get("set_id") or 0) != int(set_id):
+        return None
+
+    total_questions = len(active_session.get("questions") or [])
+    completed_questions = len(active_session.get("responses") or [])
+    progress_percent = (completed_questions / total_questions * 100) if total_questions else 0.0
+    return {
+        "set_id": int(set_id),
+        "started_at": active_session.get("started_at"),
+        "completed_questions": completed_questions,
+        "total_questions": total_questions,
+        "progress_percent": progress_percent,
+        "awaiting_next": bool(active_session.get("awaiting_next")),
+    }
+
+
+def _progress_text(latest_attempt: dict | None, active_state: dict | None) -> str:
+    if active_state:
+        return f"{active_state['completed_questions']} of {active_state['total_questions']} questions completed"
+    if latest_attempt:
+        return f"{latest_attempt['completed']} of {latest_attempt['requested_count']} questions completed"
+    return "Not attempted yet"
+
+
+def _start_selected_set(
+    user_id: int,
+    *,
+    set_id: int,
+    requested_count: int,
+    failure_endpoint: str,
+    failure_values: dict | None = None,
+):
+    failure_values = failure_values or {}
+    started, error = web_quiz_service.start_quiz(user_id, set_id, requested_count)
+    if error:
+        flash(error, "error")
+        return redirect(url_for(failure_endpoint, **failure_values))
+
+    session.pop("active_result", None)
+    session.pop("last_quiz_result", None)
+    snapshot = _store_quiz_session_snapshot(user_id)
+    logger.info("Quiz start route | user_id=%s set_id=%s total=%s", user_id, set_id, snapshot.get("total"))
+    flash(
+        f"Quiz started for {started.get('set_title') or 'Quiz Set'} with {len(started['questions'])} questions.",
+        "success",
+    )
+    return redirect(url_for("quiz.play"))
+
+
 @quiz_blueprint.route("/quiz", methods=["GET", "POST"])
 @login_required
 def quiz_start():
@@ -61,28 +227,122 @@ def quiz_start():
             flash("Please select a valid quiz set and question count.", "error")
             return redirect(url_for("quiz.quiz_start"))
 
-        started, error = web_quiz_service.start_quiz(user_id, set_id, requested_count)
-        if error:
-            flash(error, "error")
-            return redirect(url_for("quiz.quiz_start"))
-
-        session.pop("active_result", None)
-        session.pop("last_quiz_result", None)
-        snapshot = _store_quiz_session_snapshot(user_id)
-        logger.info("Quiz start route | user_id=%s set_id=%s total=%s", user_id, set_id, snapshot.get("total"))
-        flash(
-            f"Quiz started for {started.get('set_title') or 'Quiz Set'} with {len(started['questions'])} questions.",
-            "success",
+        return _start_selected_set(
+            user_id,
+            set_id=set_id,
+            requested_count=requested_count,
+            failure_endpoint="quiz.quiz_start",
         )
-        return redirect(url_for("quiz.play"))
 
-    catalog = web_quiz_service.list_exam_catalog(user_id)
+    exams = [dict(item) for item in exam_service.get_exams()]
     return render_template(
         "quiz_start.html",
         page_title="Start Quiz",
         user=user,
-        catalog=catalog,
-        question_counts=web_quiz_service.QUIZ_COUNT_OPTIONS,
+        exams=exams,
+        admin_authenticated=web_identity_service.is_admin_authenticated(),
+    )
+
+
+@quiz_blueprint.route("/quiz/<int:exam_id>/sets", methods=["GET", "POST"])
+@login_required
+def exam_sets(exam_id: int):
+    user = web_identity_service.get_authenticated_user_snapshot()
+    user_id = web_identity_service.get_authenticated_user_id()
+    if not user_id:
+        flash("Please log in to continue.", "error")
+        return redirect(url_for("auth.login"))
+
+    exam = exam_service.get_exam(exam_id)
+    if not exam:
+        flash("The selected exam could not be found.", "error")
+        return redirect(url_for("quiz.quiz_start"))
+
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip().lower()
+        try:
+            set_id = int(request.form.get("set_id", "0"))
+        except ValueError:
+            flash("Please choose a valid set.", "error")
+            return redirect(url_for("quiz.exam_sets", exam_id=exam_id))
+
+        if action == "continue":
+            active_session = web_quiz_service.get_session(user_id)
+            if active_session and int(active_session.get("set_id") or 0) == set_id:
+                return redirect(url_for("quiz.play"))
+            flash("No active quiz session was found for this set.", "error")
+            return redirect(url_for("quiz.exam_sets", exam_id=exam_id))
+
+        try:
+            requested_count = int(request.form.get("question_count", "20"))
+        except ValueError:
+            flash("Please select a valid question count.", "error")
+            return redirect(url_for("quiz.exam_sets", exam_id=exam_id))
+
+        set_item = exam_service.get_set(set_id)
+        if not set_item or int(set_item.get("exam_id") or 0) != int(exam_id):
+            flash("Please choose a valid set from this exam.", "error")
+            return redirect(url_for("quiz.exam_sets", exam_id=exam_id))
+
+        return _start_selected_set(
+            user_id,
+            set_id=set_id,
+            requested_count=requested_count,
+            failure_endpoint="quiz.exam_sets",
+            failure_values={"exam_id": exam_id},
+        )
+
+    premium_active = premium_service.is_premium(user_id)
+    admin_access = user_service.is_admin(user_id)
+    active_session = web_quiz_service.get_session(user_id)
+    attempt_summaries = _summarize_attempts_by_set(_load_user_attempts_for_exam(user_id, exam_id))
+    rank_map = _load_rank_map_for_exam(exam_id)
+
+    sets = []
+    for set_item in exam_service.get_sets(exam_id):
+        set_id = int(set_item.get("set_id") or 0)
+        locked = bool(int(set_item.get("is_premium_locked", 0)))
+        has_access = (not locked) or premium_active or admin_access
+        latest_attempt = attempt_summaries.get(set_id, {}).get("latest")
+        best_attempt = attempt_summaries.get(set_id, {}).get("best")
+        active_state = _active_set_state(active_session, set_id)
+        progress_percent = (
+            active_state["progress_percent"]
+            if active_state
+            else float(latest_attempt.get("progress_percent") or 0)
+            if latest_attempt
+            else 0.0
+        )
+
+        sets.append(
+            {
+                **dict(set_item),
+                "locked": locked,
+                "has_access": has_access,
+                "latest_attempt": latest_attempt,
+                "best_attempt": best_attempt,
+                "active_state": active_state,
+                "progress_text": _progress_text(latest_attempt, active_state),
+                "progress_percent": progress_percent,
+                "last_attempted_at": (
+                    latest_attempt.get("created_at")
+                    if latest_attempt
+                    else active_state.get("started_at")
+                    if active_state
+                    else None
+                ),
+                "rank": rank_map.get(set_id, {}).get(int(user_id)),
+                "question_count_options": _question_count_options_for_set(exam, set_item),
+                "action_label": "Continue" if active_state else "Retry" if latest_attempt else "Play",
+            }
+        )
+
+    return render_template(
+        "quiz_exam_sets.html",
+        page_title=f"{exam.get('title') or 'Exam'} Sets",
+        user=user,
+        exam=exam,
+        sets=sets,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
