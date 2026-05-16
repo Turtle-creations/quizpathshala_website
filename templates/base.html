@@ -14,13 +14,29 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
 </head>
 <body class="{{ body_class or '' }}">
-    <header class="site-header{% if compact_quiz_nav %} navbar-collapsed navbar-locked{% endif %}" data-collapsible-navbar data-navbar-locked="{{ 'true' if compact_quiz_nav else 'false' }}">
+    <header class="site-header{% if compact_quiz_nav %} site-header-quiz-sidebar navbar-collapsed{% endif %}" data-collapsible-navbar data-navbar-mode="{{ 'quiz-sidebar' if compact_quiz_nav else 'default' }}">
         <div class="container nav-shell" data-navbar-shell>
             <a class="brand" href="/" aria-label="QuizPathshala home" data-navbar-logo>
                 <span class="brand-mark">Q</span>
                 <span class="brand-text">QuizPathshala</span>
             </a>
             <div class="nav-group" data-navbar-panel>
+                {% if compact_quiz_nav %}
+                <div class="quiz-sidebar-head">
+                    <p class="quiz-sidebar-title">Quiz Menu</p>
+                    <button class="quiz-sidebar-close" type="button" aria-label="Close menu" data-navbar-close>&times;</button>
+                </div>
+                <nav class="site-nav" aria-label="Primary navigation">
+                    <a href="/dashboard">Dashboard</a>
+                    <a href="/quiz">Quizzes</a>
+                    <a href="/quiz">Practice</a>
+                    <a href="/dashboard">Performance</a>
+                    <a href="/premium">Premium</a>
+                    <a href="{{ support_telegram }}" target="_blank" rel="noopener">Telegram</a>
+                    <a href="/dashboard">Settings</a>
+                    <a href="/logout">Logout</a>
+                </nav>
+                {% else %}
                 <nav class="site-nav" aria-label="Primary navigation">
                     <a href="/">Home</a>
                     <a href="/about">About</a>
@@ -38,8 +54,12 @@
                     {% endif %}
                     <a class="button button-primary button-small" href="/quiz">Start Quiz</a>
                 </div>
+                {% endif %}
             </div>
         </div>
+        {% if compact_quiz_nav %}
+        <button class="quiz-sidebar-backdrop" type="button" aria-label="Close menu" data-navbar-backdrop></button>
+        {% endif %}
     </header>
 
     <main class="page-shell">
@@ -81,4 +101,3 @@
     <script src="{{ url_for('static', filename='js/site.js') }}" defer></script>
 </body>
 </html>
-

@@ -7,22 +7,30 @@ document.addEventListener("DOMContentLoaded", function () {
     var shell = header.querySelector("[data-navbar-shell]");
     var logo = header.querySelector("[data-navbar-logo]");
     var logoMark = header.querySelector(".brand-mark");
+    var closeButton = header.querySelector("[data-navbar-close]");
+    var backdrop = header.querySelector("[data-navbar-backdrop]");
     var navItems = Array.prototype.slice.call(header.querySelectorAll(".site-nav a, .nav-actions > *"));
-    var isLocked = header.getAttribute("data-navbar-locked") === "true";
+    var navbarMode = header.getAttribute("data-navbar-mode") || "default";
+    var isQuizSidebar = navbarMode === "quiz-sidebar";
     var collapseThreshold = 80;
     var expandThreshold = 40;
     var throttleMs = 90;
     var lastKnownScrollY = window.scrollY || 0;
     var lastRunAt = 0;
     var ticking = false;
-    var isCollapsed = false;
+    var isCollapsed = header.classList.contains("navbar-collapsed");
+
+    function syncBodyState() {
+        document.body.classList.toggle("quiz-sidebar-open", isQuizSidebar && !isCollapsed);
+    }
 
     function setAnimationMetrics() {
         if (!shell || !logoMark) {
             return;
         }
 
-        header.classList.remove("navbar-collapsed");
+        var shouldRestoreCollapsed = isCollapsed;
+        header.classList.remove("navbar-collapsed", "navbar-open");
         shell.style.width = "auto";
 
         var expandedWidth = shell.scrollWidth;
@@ -31,8 +39,10 @@ document.addEventListener("DOMContentLoaded", function () {
         shell.style.setProperty("--nav-expanded-width", expandedWidth + "px");
         shell.style.setProperty("--nav-collapsed-size", collapsedSize + "px");
 
-        if (isCollapsed) {
+        if (shouldRestoreCollapsed) {
             header.classList.add("navbar-collapsed");
+        } else if (isQuizSidebar) {
+            header.classList.add("navbar-open");
         }
     }
 
@@ -46,19 +56,20 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function applyNavbarState(shouldCollapse) {
-        if (isLocked && !shouldCollapse) {
-            return;
-        }
         if (shouldCollapse === isCollapsed) {
             return;
         }
 
         isCollapsed = shouldCollapse;
         header.classList.toggle("navbar-collapsed", isCollapsed);
+        if (isQuizSidebar) {
+            header.classList.toggle("navbar-open", !isCollapsed);
+        }
+        syncBodyState();
     }
 
     function processScroll() {
-        if (isLocked) {
+        if (isQuizSidebar) {
             applyNavbarState(true);
             lastRunAt = performance.now();
             ticking = false;
@@ -78,6 +89,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function requestScrollUpdate() {
+        if (isQuizSidebar) {
+            return;
+        }
+
         lastKnownScrollY = window.scrollY || 0;
         var now = performance.now();
 
@@ -89,7 +104,27 @@ document.addEventListener("DOMContentLoaded", function () {
         window.requestAnimationFrame(processScroll);
     }
 
-    window.addEventListener("scroll", requestScrollUpdate, { passive: true });
+    function expandQuizSidebar(event) {
+        if (!isQuizSidebar || !isCollapsed) {
+            return;
+        }
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        applyNavbarState(false);
+    }
+
+    function collapseQuizSidebar() {
+        if (!isQuizSidebar || isCollapsed) {
+            return;
+        }
+        applyNavbarState(true);
+    }
+
+    if (!isQuizSidebar) {
+        window.addEventListener("scroll", requestScrollUpdate, { passive: true });
+    }
 
     window.addEventListener("resize", function () {
         window.requestAnimationFrame(function () {
@@ -101,7 +136,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (logo) {
         logo.addEventListener("click", function (event) {
-            if (isCollapsed && !isLocked) {
+            if (isQuizSidebar) {
+                expandQuizSidebar(event);
+                return;
+            }
+            if (isCollapsed) {
                 event.preventDefault();
                 event.stopPropagation();
                 applyNavbarState(false);
@@ -109,22 +148,67 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         logo.addEventListener("touchstart", function () {
-            if (isCollapsed && !isLocked) {
+            if (isQuizSidebar) {
+                expandQuizSidebar();
+                return;
+            }
+            if (isCollapsed) {
                 applyNavbarState(false);
             }
         }, { passive: true });
 
         logo.addEventListener("keydown", function (event) {
-            if (isCollapsed && !isLocked && (event.key === "Enter" || event.key === " ")) {
+            if (event.key !== "Enter" && event.key !== " ") {
+                return;
+            }
+            if (isQuizSidebar) {
+                expandQuizSidebar(event);
+                return;
+            }
+            if (isCollapsed) {
                 event.preventDefault();
                 applyNavbarState(false);
             }
         });
     }
 
+    if (closeButton) {
+        closeButton.addEventListener("click", function () {
+            collapseQuizSidebar();
+            if (logo) {
+                logo.focus();
+            }
+        });
+    }
+
+    if (backdrop) {
+        backdrop.addEventListener("click", function () {
+            collapseQuizSidebar();
+        });
+    }
+
+    document.addEventListener("click", function (event) {
+        if (!isQuizSidebar || isCollapsed) {
+            return;
+        }
+        if (!header.contains(event.target)) {
+            collapseQuizSidebar();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && isQuizSidebar && !isCollapsed) {
+            collapseQuizSidebar();
+            if (logo) {
+                logo.focus();
+            }
+        }
+    });
+
     setItemDelays();
     setAnimationMetrics();
     processScroll();
+    syncBodyState();
 });
 
 
