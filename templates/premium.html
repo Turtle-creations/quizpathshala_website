@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block content %}
 <section class="page-hero">
@@ -11,7 +11,7 @@
 
 <section class="section">
     <div class="container form-grid">
-        <div class="text-page">
+        <div class="text-page section-contrast">
             <h2>What premium unlocks</h2>
             <ul class="mini-list">
                 {% for benefit in premium_benefits %}
@@ -22,11 +22,14 @@
             <p>Telegram remains available as a companion channel for support and continuity at <a href="{{ bot_url }}" target="_blank" rel="noopener">@QuizPathshala_bot</a>.</p>
         </div>
 
-        <div class="catalog-card">
-            <h2>Choose a plan</h2>
+        <div class="catalog-card premium-catalog-shell">
+            <div class="section-heading">
+                <h2>Choose a plan</h2>
+                <p>Clean pricing, secure checkout, and premium activation after verified payment confirmation.</p>
+            </div>
             <div class="card-grid pricing-grid">
                 {% for item in premium_prices %}
-                <article class="plan-card plan-card-large">
+                <article class="plan-card plan-card-large {% if item.key == 'month_1' %}plan-card-featured{% endif %}">
                     <p class="plan-tag">{{ item.key }}</p>
                     <h3>{{ item.name }}</h3>
                     <p class="plan-price">INR {{ "%.2f"|format(item.amount_rupees) }}</p>

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -18,15 +18,24 @@
         <div class="container nav-shell" data-navbar-shell>
             <a class="brand" href="/" aria-label="QuizPathshala home" data-navbar-logo>
                 <span class="brand-mark">Q</span>
-                <span class="brand-text">QuizPathshala</span>
+                <span class="brand-copy">
+                    <span class="brand-text">QuizPathshala</span>
+                    <span class="brand-tagline">Premium quiz practice</span>
+                </span>
             </a>
+            <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-navigation" data-navbar-toggle>
+                <span class="nav-toggle-line"></span>
+                <span class="nav-toggle-line"></span>
+                <span class="nav-toggle-line"></span>
+                <span class="sr-only">Toggle navigation</span>
+            </button>
             <div class="nav-group" data-navbar-panel>
-                <nav class="site-nav" aria-label="Primary navigation">
-                    <a href="/">Home</a>
-                    <a href="/about">About</a>
-                    <a href="/quiz">Quiz</a>
-                    <a href="/premium">Premium</a>
-                    <a href="/contact">Contact</a>
+                <nav class="site-nav" id="site-navigation" aria-label="Primary navigation">
+                    <a href="/" {% if request.path == '/' %}aria-current="page"{% endif %}>Home</a>
+                    <a href="/about" {% if request.path.startswith('/about') %}aria-current="page"{% endif %}>About</a>
+                    <a href="/quiz" {% if request.path.startswith('/quiz') %}aria-current="page"{% endif %}>Quiz</a>
+                    <a href="/premium" {% if request.path.startswith('/premium') %}aria-current="page"{% endif %}>Premium</a>
+                    <a href="/contact" {% if request.path.startswith('/contact') %}aria-current="page"{% endif %}>Contact</a>
                 </nav>
                 <div class="nav-actions">
                     {% if is_authenticated %}
@@ -56,7 +65,7 @@
     </main>
 
     <footer class="site-footer">
-        <div class="container footer-grid">
+        <div class="container footer-grid footer-surface">
             <div>
                 <h3>QuizPathshala</h3>
                 <p>Online quiz preparation platform for revision, premium practice access, and secure website-first learning.</p>
@@ -81,4 +90,3 @@
     <script src="{{ url_for('static', filename='js/site.js') }}" defer></script>
 </body>
 </html>
-
