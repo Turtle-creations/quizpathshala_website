@@ -1,11 +1,11 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block content %}
 <section class="landing-shell">
-    <div class="container landing-card">
-        <section class="hero hero-modern">
-            <div class="hero-grid hero-grid-modern">
-                <div class="hero-copy-block">
+    <div class="container landing-card landing-card-premium">
+        <section class="hero hero-modern hero-home-premium">
+            <div class="hero-grid hero-grid-modern hero-grid-home-premium">
+                <div class="hero-copy-block hero-copy-block-premium">
                     <span class="eyebrow">For SSC, Banking, and Railway Aspirants</span>
                     <h1>Practice Smarter with <span class="headline-accent">QuizPathshala</span></h1>
                     <p class="hero-copy">An online quiz preparation platform for students and exam aspirants preparing for SSC, Banking, Railway, and other competitive exams.</p>
@@ -14,45 +14,56 @@
                         <a class="button button-primary" href="/quiz">Start Free Quiz</a>
                         <a class="button button-secondary" href="/premium">View Premium Plans</a>
                     </div>
-                    <p class="trust-line">Trusted by students preparing for competitive exams</p>
                     <div class="hero-trust-row">
                         <span>Secure Razorpay checkout</span>
                         <span>Server-side premium activation</span>
                         <span>Telegram companion support</span>
                     </div>
                 </div>
-                <div class="hero-visual-card">
-                    <svg class="hero-illustration" viewBox="0 0 560 440" role="img" aria-label="Quiz and education illustration">
-                        <defs>
-                            <linearGradient id="cardBlue" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#69a8ff"/>
-                                <stop offset="100%" stop-color="#2f72f8"/>
-                            </linearGradient>
-                        </defs>
-                        <rect x="38" y="44" width="484" height="348" rx="36" fill="#e8f2ff"/>
-                        <rect x="72" y="86" width="250" height="230" rx="28" fill="#ffffff"/>
-                        <rect x="96" y="116" width="140" height="18" rx="9" fill="#dcecff"/>
-                        <rect x="96" y="150" width="178" height="14" rx="7" fill="#edf4ff"/>
-                        <rect x="96" y="190" width="198" height="46" rx="18" fill="#f4f8ff"/>
-                        <circle cx="122" cy="213" r="12" fill="#2f72f8"/>
-                        <path d="M116 213l5 5 9-11" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-                        <rect x="144" y="203" width="116" height="10" rx="5" fill="#bfd8ff"/>
-                        <rect x="144" y="220" width="92" height="8" rx="4" fill="#d9e9ff"/>
-                        <rect x="96" y="250" width="198" height="46" rx="18" fill="#f4f8ff"/>
-                        <circle cx="122" cy="273" r="12" fill="#9bc0ff"/>
-                        <rect x="144" y="263" width="126" height="10" rx="5" fill="#bfd8ff"/>
-                        <rect x="144" y="280" width="84" height="8" rx="4" fill="#d9e9ff"/>
-                        <rect x="354" y="104" width="132" height="160" rx="30" fill="url(#cardBlue)"/>
-                        <rect x="378" y="130" width="84" height="12" rx="6" fill="#ffffff" opacity="0.95"/>
-                        <rect x="378" y="154" width="54" height="10" rx="5" fill="#d5e5ff"/>
-                        <circle cx="420" cy="214" r="34" fill="#ffffff"/>
-                        <path d="M406 214l10 10 18-22" fill="none" stroke="#2f72f8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-                        <rect x="336" y="286" width="162" height="74" rx="28" fill="#ffffff"/>
-                        <rect x="360" y="310" width="92" height="10" rx="5" fill="#c4dbff"/>
-                        <rect x="360" y="329" width="118" height="10" rx="5" fill="#e4efff"/>
-                        <circle cx="102" cy="360" r="18" fill="#ffffff"/>
-                        <circle cx="486" cy="72" r="14" fill="#ffffff"/>
-                    </svg>
+                <div class="hero-dashboard-card">
+                    <div class="hero-dashboard-topline">
+                        <span class="plan-tag">Live prep workflow</span>
+                        <span class="hero-dashboard-label">Quiz dashboard preview</span>
+                    </div>
+                    <div class="hero-dashboard-stat-grid">
+                        <article class="hero-dashboard-stat">
+                            <span>Quiz sets</span>
+                            <strong>120+</strong>
+                        </article>
+                        <article class="hero-dashboard-stat">
+                            <span>Accuracy review</span>
+                            <strong>Instant</strong>
+                        </article>
+                        <article class="hero-dashboard-stat">
+                            <span>Premium support</span>
+                            <strong>24/7</strong>
+                        </article>
+                    </div>
+                    <div class="hero-dashboard-progress">
+                        <div class="progress-card-head">
+                            <span>Preparation momentum</span>
+                            <strong>78%</strong>
+                        </div>
+                        <div class="progress-track" aria-hidden="true">
+                            <span class="progress-fill" style="width: 78%;"></span>
+                        </div>
+                    </div>
+                    <div class="hero-dashboard-list">
+                        <div class="hero-dashboard-item">
+                            <span class="option-marker">A</span>
+                            <div>
+                                <strong>Practice by exam target</strong>
+                                <p>Move from topic practice to timed quiz sessions in a single workflow.</p>
+                            </div>
+                        </div>
+                        <div class="hero-dashboard-item">
+                            <span class="option-marker">B</span>
+                            <div>
+                                <strong>Review with clarity</strong>
+                                <p>Track correct, wrong, skipped, and accuracy through premium review cards.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -62,7 +73,7 @@
                 <span class="eyebrow">Core Features</span>
                 <h2>Everything learners need in one place</h2>
             </div>
-            <div class="feature-tiles">
+            <div class="feature-tiles feature-tiles-premium">
                 <article class="feature-tile">
                     <div class="feature-icon feature-icon-quiz">
                         <span>?</span>
@@ -90,6 +101,27 @@
                     </div>
                     <h3>Telegram Support</h3>
                     <p>Use the companion Telegram bot for support, continuity, and exam preparation updates.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="section dashboard-showcase-section">
+            <div class="section-heading section-heading-centered">
+                <span class="eyebrow">Why It Feels Premium</span>
+                <h2>A clean EdTech dashboard built around focus</h2>
+            </div>
+            <div class="dashboard-showcase-grid">
+                <article class="data-card dashboard-showcase-card">
+                    <h3>Focused quiz player</h3>
+                    <p>Minimal distractions, big answer targets, timer visibility, and modern progress tracking keep learners in flow.</p>
+                </article>
+                <article class="data-card dashboard-showcase-card">
+                    <h3>Result analytics</h3>
+                    <p>Performance is broken into score, accuracy, correct, wrong, and skipped states using fast-to-scan summary cards.</p>
+                </article>
+                <article class="data-card dashboard-showcase-card">
+                    <h3>Upgrade with confidence</h3>
+                    <p>Premium checkout, activation, and support messaging are presented with the polish of a modern SaaS learning product.</p>
                 </article>
             </div>
         </section>

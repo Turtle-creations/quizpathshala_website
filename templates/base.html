@@ -13,7 +13,7 @@
     {% endif %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
 </head>
-<body>
+<body class="{% if request.path.startswith('/quiz/play') %}page-quiz-player{% endif %}">
     <header class="site-header" data-collapsible-navbar>
         <div class="container nav-shell" data-navbar-shell>
             <a class="brand" href="/" aria-label="QuizPathshala home" data-navbar-logo>

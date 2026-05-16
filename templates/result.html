@@ -11,7 +11,7 @@
 
 <section class="section">
     <div class="container narrow">
-        <div class="card-grid score-grid score-grid-extended">
+        <div class="card-grid score-grid score-grid-extended result-summary-grid-premium">
             <article class="info-card stat-card-primary">
                 <h3>Score</h3>
                 <p class="stat">{{ "%.2f"|format(summary.score) }}</p>
@@ -102,6 +102,10 @@
             {% else %}
             <p>No attempted questions were recorded for this attempt.</p>
             {% endfor %}
+            <article class="answer-review-card answer-review-card-neutral report-placeholder-card">
+                <span class="answer-review-label">Future improvement area</span>
+                <p class="answer-review-value">A report-wrong-question action can be added here later without changing the surrounding review layout.</p>
+            </article>
         </div>
     </div>
 </section>
