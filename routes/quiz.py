@@ -192,6 +192,8 @@ def play():
     return render_template(
         "play.html",
         page_title="Play Quiz",
+        body_class="quiz-play-page",
+        compact_quiz_nav=True,
         user=user,
         current_set=current_set,
         quiz_session=quiz_snapshot,
@@ -202,7 +204,7 @@ def play():
     )
 
 
-@quiz_blueprint.route("/result")
+@quiz_blueprint.route("/result", methods=["GET", "POST"])
 @login_required
 def result():
     user = web_identity_service.get_authenticated_user_snapshot()
@@ -210,6 +212,21 @@ def result():
     if not user_id:
         flash("Please log in to continue.", "error")
         return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        if action == "report_question":
+            try:
+                web_quiz_service.submit_question_report(
+                    user_id=user_id,
+                    question_id=int(request.form.get("question_id", "0")),
+                    set_id=int(request.form.get("set_id", "0")),
+                    reason=request.form.get("reason", ""),
+                )
+                flash("Your report has been submitted to the admin team.", "success")
+            except Exception as exc:
+                flash(str(exc), "error")
+        return redirect(url_for("quiz.result"))
 
     summary = web_quiz_service.load_completed_summary(user_id) or session.get("last_quiz_result")
     if not summary:
@@ -222,6 +239,7 @@ def result():
     return render_template(
         "result.html",
         page_title="Quiz Result",
+        body_class="quiz-result-page",
         user=user,
         summary=summary,
         current_set=current_set,

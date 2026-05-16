@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var logo = header.querySelector("[data-navbar-logo]");
     var logoMark = header.querySelector(".brand-mark");
     var navItems = Array.prototype.slice.call(header.querySelectorAll(".site-nav a, .nav-actions > *"));
+    var isLocked = header.getAttribute("data-navbar-locked") === "true";
     var collapseThreshold = 80;
     var expandThreshold = 40;
     var throttleMs = 90;
@@ -45,6 +46,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function applyNavbarState(shouldCollapse) {
+        if (isLocked && !shouldCollapse) {
+            return;
+        }
         if (shouldCollapse === isCollapsed) {
             return;
         }
@@ -54,6 +58,13 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function processScroll() {
+        if (isLocked) {
+            applyNavbarState(true);
+            lastRunAt = performance.now();
+            ticking = false;
+            return;
+        }
+
         var currentScrollY = lastKnownScrollY;
 
         if (!isCollapsed && currentScrollY >= collapseThreshold) {
@@ -90,7 +101,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (logo) {
         logo.addEventListener("click", function (event) {
-            if (isCollapsed) {
+            if (isCollapsed && !isLocked) {
                 event.preventDefault();
                 event.stopPropagation();
                 applyNavbarState(false);
@@ -98,13 +109,13 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         logo.addEventListener("touchstart", function () {
-            if (isCollapsed) {
+            if (isCollapsed && !isLocked) {
                 applyNavbarState(false);
             }
         }, { passive: true });
 
         logo.addEventListener("keydown", function (event) {
-            if (isCollapsed && (event.key === "Enter" || event.key === " ")) {
+            if (isCollapsed && !isLocked && (event.key === "Enter" || event.key === " ")) {
                 event.preventDefault();
                 applyNavbarState(false);
             }

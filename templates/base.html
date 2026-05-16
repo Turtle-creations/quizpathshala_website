@@ -13,8 +13,8 @@
     {% endif %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
 </head>
-<body>
-    <header class="site-header" data-collapsible-navbar>
+<body class="{{ body_class or '' }}">
+    <header class="site-header{% if compact_quiz_nav %} navbar-collapsed navbar-locked{% endif %}" data-collapsible-navbar data-navbar-locked="{{ 'true' if compact_quiz_nav else 'false' }}">
         <div class="container nav-shell" data-navbar-shell>
             <a class="brand" href="/" aria-label="QuizPathshala home" data-navbar-logo>
                 <span class="brand-mark">Q</span>

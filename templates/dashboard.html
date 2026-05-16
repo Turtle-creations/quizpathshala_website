@@ -58,7 +58,7 @@
                 <tbody>
                     {% for attempt in performance.recent_attempts %}
                     <tr>
-                        <td>{{ attempt.created_at }}</td>
+                        <td>{{ attempt.created_at|format_user_datetime(user) }}</td>
                         <td>{{ attempt.exam_title or "-" }}</td>
                         <td>{{ attempt.set_title or "-" }}</td>
                         <td>{{ "%.2f"|format(attempt.score) }}</td>

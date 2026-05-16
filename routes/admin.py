@@ -13,6 +13,7 @@ from services.payment_service_db import payment_service
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
 from utils.logging_utils import get_logger
+from utils.question_image_upload import delete_question_image, save_question_image
 
 
 admin_blueprint = Blueprint("admin", __name__)
@@ -584,38 +585,55 @@ def admin_dashboard():
                 flash("Set added successfully.", "success")
             elif action == "save_question":
                 question_id = int(request.form.get("question_id", "0") or "0") or None
-                question_result = (
-                    web_admin_service.update_question(
-                        question_id=question_id,
-                        set_id=int(request.form.get("set_id", "0")),
-                        question_text=request.form.get("question_text", ""),
-                        options=[
-                            request.form.get("option_a", ""),
-                            request.form.get("option_b", ""),
-                            request.form.get("option_c", ""),
-                            request.form.get("option_d", ""),
-                        ],
-                        correct_option=request.form.get("correct_option", ""),
-                        explanation=request.form.get("explanation") or None,
-                        image_path=request.form.get("image_path") or None,
-                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
-                    )
-                    if question_id
-                    else web_admin_service.add_question(
-                        set_id=int(request.form.get("set_id", "0")),
-                        question_text=request.form.get("question_text", ""),
-                        options=[
-                            request.form.get("option_a", ""),
-                            request.form.get("option_b", ""),
-                            request.form.get("option_c", ""),
-                            request.form.get("option_d", ""),
-                        ],
-                        correct_option=request.form.get("correct_option", ""),
-                        explanation=request.form.get("explanation") or None,
-                        image_path=request.form.get("image_path") or None,
-                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
-                    )
+                existing_question = web_admin_service.get_question(question_id) if question_id else None
+                existing_image_path = (
+                    request.form.get("current_image_path")
+                    or (existing_question.get("image_path") if existing_question else None)
+                    or None
                 )
+                remove_current_image = bool(request.form.get("remove_image"))
+                uploaded_image_path = None
+                try:
+                    uploaded_image_path = save_question_image(request.files.get("question_image"))
+                    resolved_image_path = uploaded_image_path or (None if remove_current_image else existing_image_path)
+                    question_result = (
+                        web_admin_service.update_question(
+                            question_id=question_id,
+                            set_id=int(request.form.get("set_id", "0")),
+                            question_text=request.form.get("question_text", ""),
+                            options=[
+                                request.form.get("option_a", ""),
+                                request.form.get("option_b", ""),
+                                request.form.get("option_c", ""),
+                                request.form.get("option_d", ""),
+                            ],
+                            correct_option=request.form.get("correct_option", ""),
+                            explanation=request.form.get("explanation") or None,
+                            image_path=resolved_image_path,
+                            time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                        )
+                        if question_id
+                        else web_admin_service.add_question(
+                            set_id=int(request.form.get("set_id", "0")),
+                            question_text=request.form.get("question_text", ""),
+                            options=[
+                                request.form.get("option_a", ""),
+                                request.form.get("option_b", ""),
+                                request.form.get("option_c", ""),
+                                request.form.get("option_d", ""),
+                            ],
+                            correct_option=request.form.get("correct_option", ""),
+                            explanation=request.form.get("explanation") or None,
+                            image_path=resolved_image_path,
+                            time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                        )
+                    )
+                except Exception:
+                    if uploaded_image_path:
+                        delete_question_image(uploaded_image_path)
+                    raise
+                if existing_image_path and existing_image_path != resolved_image_path:
+                    delete_question_image(existing_image_path)
                 operation = question_result.get("operation") or "saved"
                 if operation == "created":
                     flash("Question saved successfully.", "success")

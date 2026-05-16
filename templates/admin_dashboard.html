@@ -81,11 +81,12 @@
 
         <div class="form-card" id="question-editor" data-admin-panel tabindex="-1">
             <h2>{{ 'Edit question' if editing_question else 'Add single question' }}</h2>
-            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
+            <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="save_question">
                 <input type="hidden" name="q" value="{{ search_query }}">
                 {% if admin_return_anchor %}<input type="hidden" name="return_anchor" value="{{ admin_return_anchor }}">{% endif %}
                 <input type="hidden" name="question_id" value="{{ editing_question.question_id if editing_question else '' }}">
+                <input type="hidden" name="current_image_path" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
                 <label for="question_set_id">Set name</label>
                 <select id="question_set_id" name="set_id">
                     {% for set_choice in set_choices %}
@@ -102,8 +103,12 @@
                 <input id="correct_option" name="correct_option" type="text" placeholder="Option text, not A/B/C/D" value="{{ editing_question.correct_option if editing_question else '' }}">
                 <label for="explanation">Explanation</label>
                 <textarea id="explanation" name="explanation" rows="3">{{ editing_question.explanation if editing_question and editing_question.explanation else '' }}</textarea>
-                <label for="image_path">Image path (optional)</label>
-                <input id="image_path" name="image_path" type="text" placeholder="data/images/example.jpg" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
+                <label for="question_image">Question image (optional)</label>
+                <input id="question_image" name="question_image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+                {% if editing_question and editing_question.image_path %}
+                <img class="question-image admin-question-image-preview" src="{{ url_for('media_file', relative_path=editing_question.image_path) }}" alt="Current question image">
+                <label><input type="checkbox" name="remove_image" value="1"> Remove current image</label>
+                {% endif %}
                 <label for="time_limit">Time limit in seconds</label>
                 <input id="time_limit" name="time_limit" type="number" min="1" placeholder="15" value="{{ editing_question.time_limit if editing_question else '' }}">
                 <p class="helper-text">If the same question already exists in the selected set, the latest save will update that record instead of creating a duplicate.</p>
@@ -350,6 +355,29 @@
                     </tr>
                     {% else %}
                     <tr><td colspan="4">No support tickets yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card" id="question-reports-panel" data-admin-panel tabindex="-1">
+            <h2>Question Reports</h2>
+            <table>
+                <thead>
+                    <tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Question</th><th>Reason</th></tr>
+                </thead>
+                <tbody>
+                    {% for report in question_reports %}
+                    <tr>
+                        <td>{{ report.created_at|format_user_datetime(current_user) }}</td>
+                        <td>{{ report.full_name or report.user_id }}</td>
+                        <td>{{ report.exam_title or '-' }}</td>
+                        <td>{{ report.set_title or '-' }}</td>
+                        <td>{{ report.question_text or ('Question #' ~ report.question_id) }}</td>
+                        <td>{{ report.reason }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">No question reports yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

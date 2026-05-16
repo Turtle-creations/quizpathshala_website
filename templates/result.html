@@ -34,8 +34,8 @@
             <p><strong>Skipped:</strong> {{ summary.skipped }}</p>
             <p><strong>Negative marking:</strong> -{{ "%.2f"|format(summary.negative_marking) }}</p>
             <p><strong>Ended reason:</strong> {{ summary.ended_reason.replace('_', ' ')|title }}</p>
-            <p><strong>Started at:</strong> {{ summary.started_at or '-' }}</p>
-            <p><strong>Completed at:</strong> {{ summary.completed_at or '-' }}</p>
+            <p><strong>Started at:</strong> {{ summary.started_at|format_user_datetime(user) }}</p>
+            <p><strong>Completed at:</strong> {{ summary.completed_at|format_user_datetime(user) }}</p>
         </div>
         <div class="hero-actions">
             <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Play Quiz Again</a>
@@ -60,6 +60,17 @@
                 {% if item.explanation %}
                 <p><strong>Explanation:</strong> {{ item.explanation }}</p>
                 {% endif %}
+                <details class="report-question-box">
+                    <summary>Report wrong question</summary>
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="report_question">
+                        <input type="hidden" name="question_id" value="{{ item.question_id }}">
+                        <input type="hidden" name="set_id" value="{{ summary.set_id }}">
+                        <label for="report_reason_{{ item.question_id }}">Reason / comment</label>
+                        <textarea id="report_reason_{{ item.question_id }}" name="reason" rows="3" placeholder="Tell us what is wrong in this question, option, answer, image, or explanation."></textarea>
+                        <button class="button button-secondary button-small" type="submit">Submit Report</button>
+                    </form>
+                </details>
             </article>
             {% else %}
             <p>No attempted questions were recorded for this attempt.</p>
@@ -85,7 +96,7 @@
                 <tbody>
                     {% for attempt in performance.recent_attempts %}
                     <tr>
-                        <td>{{ attempt.created_at }}</td>
+                        <td>{{ attempt.created_at|format_user_datetime(user) }}</td>
                         <td>{{ attempt.set_title or '-' }}</td>
                         <td>{{ "%.2f"|format(attempt.score) }}</td>
                         <td>{{ "%.2f"|format(attempt.accuracy) }}%</td>

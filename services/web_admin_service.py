@@ -53,6 +53,24 @@ class WebAdminService:
                 """,
                 (50,),
             ).fetchall()]
+            question_reports = [dict(row) for row in conn.execute(
+                """
+                SELECT
+                    qr.*,
+                    u.full_name,
+                    q.question_text,
+                    s.title AS set_title,
+                    e.title AS exam_title
+                FROM question_reports qr
+                LEFT JOIN users u ON u.user_id = qr.user_id
+                LEFT JOIN questions q ON q.question_id = qr.question_id
+                LEFT JOIN exam_sets s ON s.set_id = qr.set_id
+                LEFT JOIN exams e ON e.exam_id = s.exam_id
+                ORDER BY qr.created_at DESC, qr.report_id DESC
+                LIMIT ?
+                """,
+                (50,),
+            ).fetchall()]
             settings_rows = conn.execute(
                 """
                 SELECT key, value
@@ -125,6 +143,7 @@ class WebAdminService:
             "orders": orders,
             "premium_prices": premium_prices,
             "support_tickets": support_tickets,
+            "question_reports": question_reports,
             "admins": admins,
             "non_admins": non_admins,
             "exams": exams,

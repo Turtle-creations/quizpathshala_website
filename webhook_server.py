@@ -27,6 +27,7 @@ from services.bootstrap_service import bootstrap_application
 from services.web_identity_service import web_identity_service
 from services.web_password_reset_service import web_password_reset_service
 from utils.logging_utils import get_logger, setup_logging
+from utils.timezone_utils import format_user_datetime
 
 
 setup_logging()
@@ -45,6 +46,7 @@ def create_app() -> Flask:
     app.config["JSON_AS_ASCII"] = False
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400
     app.json.ensure_ascii = False
+    app.jinja_env.filters["format_user_datetime"] = format_user_datetime
 
     if APP_ENV == "production" and SECRET_KEY == "quizpathshala-web-secret":
         logger.warning("Production is using the default SECRET_KEY. Set SECRET_KEY in Render environment variables.")

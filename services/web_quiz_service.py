@@ -440,6 +440,39 @@ class WebQuizService:
             )
         return attempts
 
+    def submit_question_report(self, *, user_id: int, question_id: int, set_id: int, reason: str) -> int:
+        cleaned_reason = " ".join(str(reason or "").strip().split())
+        if len(cleaned_reason) < 5:
+            raise ValueError("Please add a short reason with at least 5 characters.")
+
+        with database.connection() as conn:
+            question_row = conn.execute(
+                "SELECT question_id, set_id FROM questions WHERE question_id = ?",
+                (question_id,),
+            ).fetchone()
+            if not question_row:
+                raise ValueError("This question could not be found anymore.")
+            if int(question_row["set_id"]) != int(set_id):
+                raise ValueError("Question report could not be matched to this quiz set.")
+
+            cursor = conn.execute(
+                """
+                INSERT INTO question_reports (user_id, question_id, set_id, reason, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, question_id, set_id, cleaned_reason, self._timestamp_now()),
+            )
+
+        report_id = int(cursor.lastrowid)
+        self.logger.info(
+            "Question reported | report_id=%s user_id=%s question_id=%s set_id=%s",
+            report_id,
+            user_id,
+            question_id,
+            set_id,
+        )
+        return report_id
+
 
     def _ensure_active_session_table(self, conn) -> None:
         conn.execute(
