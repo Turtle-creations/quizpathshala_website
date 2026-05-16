@@ -1,4 +1,4 @@
-﻿document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", function () {
     var header = document.querySelector("[data-collapsible-navbar]");
     if (!header) {
         return;

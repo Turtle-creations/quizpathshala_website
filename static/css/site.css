@@ -1317,3 +1317,154 @@ tr:last-child td {
         min-width: 520px;
     }
 }
+
+.auth-hero {
+    padding-top: 3.1rem;
+}
+
+.auth-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 1.4rem;
+    align-items: stretch;
+}
+
+.auth-panel {
+    border-radius: 24px;
+}
+
+.auth-panel-copy {
+    padding: 1.8rem;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: linear-gradient(180deg, rgba(239, 246, 255, 0.82) 0%, rgba(255, 255, 255, 0.92) 100%);
+    box-shadow: var(--shadow);
+}
+
+.auth-card {
+    max-width: 100%;
+    margin: 0;
+}
+
+.premium-form-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.premium-form-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+    background: linear-gradient(90deg, #60a5fa 0%, #2563eb 55%, #1d4ed8 100%);
+}
+
+.form-card-header {
+    margin-bottom: 0.3rem;
+}
+
+.form-card-header h2 {
+    margin-bottom: 0.35rem;
+}
+
+.form-card-header p,
+.auth-links-stack p {
+    margin: 0;
+}
+
+.auth-links-stack {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.auth-trust-row {
+    margin-top: 1.25rem;
+}
+
+.quiz-discovery-grid {
+    align-items: start;
+}
+
+.quiz-discovery-copy,
+.quiz-selection-shell {
+    position: sticky;
+    top: 6.4rem;
+}
+
+.quiz-selection-shell {
+    display: grid;
+    gap: 1rem;
+}
+
+.exam-card-head {
+    margin-bottom: 0.5rem;
+}
+
+.exam-card-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+}
+
+.quiz-set-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.quiz-set-form-card:hover {
+    border-color: rgba(37, 99, 235, 0.22);
+    box-shadow: 0 16px 28px rgba(37, 99, 235, 0.08);
+}
+
+.option-button-selected .option-marker,
+.option-button-pending .option-marker {
+    background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+}
+
+.answer-review-card-compact {
+    max-width: 100%;
+}
+
+.review-item-card .answer-review-shell {
+    margin-top: 0.25rem;
+}
+
+.form-card input,
+.form-card select,
+.form-card textarea {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.site-nav a,
+.button,
+input,
+select,
+textarea,
+label {
+    letter-spacing: 0.01em;
+}
+
+@media (max-width: 1100px) {
+    .auth-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .quiz-discovery-copy,
+    .quiz-selection-shell {
+        position: static;
+        top: auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .auth-panel-copy,
+    .auth-card {
+        padding: 1.25rem;
+    }
+
+    .exam-card-metrics {
+        justify-content: flex-start;
+    }
+}

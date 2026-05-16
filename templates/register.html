@@ -1,17 +1,23 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block content %}
-<section class="page-hero">
-    <div class="container narrow">
-        <span class="eyebrow">Register</span>
-        <h1>Create your QuizPathshala account</h1>
-        <p>Register to access quiz practice, track progress, and manage future premium access from your website account.</p>
-    </div>
-</section>
-
-<section class="section">
-    <div class="container narrow">
-        <form accept-charset="UTF-8" method="post" class="form-card">
+<section class="page-hero auth-hero">
+    <div class="container narrow auth-shell">
+        <div class="auth-panel auth-panel-copy">
+            <span class="eyebrow">Register</span>
+            <h1>Create your QuizPathshala account</h1>
+            <p>Register to access quiz practice, track progress, and manage future premium access from your website account.</p>
+            <div class="hero-trust-row auth-trust-row">
+                <span>Practice history saved</span>
+                <span>Premium ready account</span>
+                <span>Exam focused workflow</span>
+            </div>
+        </div>
+        <form accept-charset="UTF-8" method="post" class="form-card auth-card premium-form-card">
+            <div class="form-card-header">
+                <h2>Create account</h2>
+                <p>Set up your learner profile in a few quick steps.</p>
+            </div>
             <label for="full_name">Name</label>
             <input id="full_name" name="full_name" type="text" required>
 
@@ -28,8 +34,10 @@
             <input id="confirm_password" name="confirm_password" type="password" required>
 
             <button class="button button-primary" type="submit">Register New User</button>
-            <p>The first website registration must use <strong>{{ super_admin_email }}</strong> so the super admin account can be created securely.</p>
-            <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+            <div class="auth-links-stack">
+                <p>The first website registration must use <strong>{{ super_admin_email }}</strong> so the super admin account can be created securely.</p>
+                <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+            </div>
         </form>
     </div>
 </section>
