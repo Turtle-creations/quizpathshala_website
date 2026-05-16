@@ -1215,21 +1215,27 @@ body.quiz-sidebar-open {
     gap: 1rem;
 }
 
-.quiz-exam-link {
-    text-decoration: none;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+.quiz-exam-card {
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: var(--shadow);
+    align-content: space-between;
 }
 
-.quiz-exam-link:hover,
-.quiz-exam-link:focus-visible {
-    transform: translateY(-2px);
-    border-color: rgba(37, 99, 235, 0.24);
-    box-shadow: 0 20px 34px rgba(37, 99, 235, 0.1);
+.quiz-exam-card-body {
+    display: grid;
+    gap: 1rem;
 }
 
-.quiz-link-hint {
-    color: var(--accent-dark);
-    font-weight: 700;
+.quiz-exam-card-footer {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.quiz-open-button {
+    min-width: 9rem;
 }
 
 .quiz-meta-grid,

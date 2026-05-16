@@ -23,23 +23,27 @@
             <h2>Available exams</h2>
             <div class="quiz-exam-grid">
                 {% for exam in exams %}
-                <a class="catalog-card compact-card quiz-exam-card quiz-exam-link" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">
-                    <div>
-                        <h3>{{ exam.title }}</h3>
-                        <p>{{ exam.description or "Exam practice category" }}</p>
-                    </div>
-                    <div class="quiz-meta-grid">
-                        <div class="quiz-meta-item">
-                            <span>Sets</span>
-                            <strong>{{ exam.set_count }}</strong>
+                <article class="catalog-card compact-card quiz-exam-card">
+                    <div class="quiz-exam-card-body">
+                        <div>
+                            <h3>{{ exam.title }}</h3>
+                            <p>{{ exam.description or "Exam practice category" }}</p>
                         </div>
-                        <div class="quiz-meta-item">
-                            <span>Total questions</span>
-                            <strong>{{ exam.question_count or 0 }}</strong>
+                        <div class="quiz-meta-grid">
+                            <div class="quiz-meta-item">
+                                <span>Sets</span>
+                                <strong>{{ exam.set_count }}</strong>
+                            </div>
+                            <div class="quiz-meta-item">
+                                <span>Total questions</span>
+                                <strong>{{ exam.question_count or 0 }}</strong>
+                            </div>
                         </div>
                     </div>
-                    <span class="quiz-link-hint">Open sets</span>
-                </a>
+                    <div class="quiz-exam-card-footer">
+                        <a class="button button-primary button-small quiz-open-button" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">Open Sets</a>
+                    </div>
+                </article>
                 {% else %}
                 <p>No quiz categories are available yet.</p>
                 {% endfor %}
