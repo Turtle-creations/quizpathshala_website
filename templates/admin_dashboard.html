@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div data-admin-scroll-preserve="true"></div>
 <section class="page-hero">
     <div class="container">
         <span class="eyebrow">Admin Panel</span>
@@ -168,13 +169,13 @@
 
 <section class="section">
     <div class="container admin-grid">
-        <div class="data-card" id="users-and-roles" data-admin-panel tabindex="-1">
+        <div class="data-card" id="users-section" data-admin-panel tabindex="-1">
             <div class="admin-panel-header">
                 <div>
                     <h2>Users and roles</h2>
                     <p class="helper-text">Latest users first. Filter by join date and page through 10 at a time.</p>
                 </div>
-                <form class="compact-toolbar" method="get" accept-charset="UTF-8">
+                <form class="compact-toolbar" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#users-section">
                     <input type="date" name="users_from" value="{{ filters.users_from }}">
                     <input type="date" name="users_to" value="{{ filters.users_to }}">
                     <button class="button button-secondary" type="submit">Filter</button>
@@ -200,7 +201,7 @@
                                 <input type="hidden" name="users_page" value="{{ users_pagination.page }}">
                                 <input type="hidden" name="users_from" value="{{ filters.users_from }}">
                                 <input type="hidden" name="users_to" value="{{ filters.users_to }}">
-                                <input type="hidden" name="return_anchor" value="users-and-roles">
+                                <input type="hidden" name="return_anchor" value="users-section">
                                 <button class="button button-secondary" type="submit">Make {{ 'User' if user.user_role == 'admin' else 'Admin' }}</button>
                             </form>
                             {% else %}
@@ -213,7 +214,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#users-section" data-admin-preserve="true" data-return-anchor="users-section">
                 <input type="hidden" name="users_from" value="{{ filters.users_from }}">
                 <input type="hidden" name="users_to" value="{{ filters.users_to }}">
                 {% if users_pagination.has_prev %}<button class="button button-secondary" name="users_page" value="{{ users_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
@@ -303,13 +304,13 @@
 
 <section class="section">
     <div class="container admin-grid">
-        <div class="data-card" id="payments-panel" data-admin-panel tabindex="-1">
+        <div class="data-card" id="payments-section" data-admin-panel tabindex="-1">
             <div class="admin-panel-header">
                 <div>
                     <h2>Payment logs</h2>
                     <p class="helper-text">Latest first, 10 per page.</p>
                 </div>
-                <form class="compact-toolbar" method="get" accept-charset="UTF-8">
+                <form class="compact-toolbar" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#payments-section">
                     <input type="date" name="logs_from" value="{{ filters.logs_from }}">
                     <input type="date" name="logs_to" value="{{ filters.logs_to }}">
                     <button class="button button-secondary" type="submit">Filter</button>
@@ -331,7 +332,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#payments-section" data-admin-preserve="true" data-return-anchor="payments-section">
                 <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
                 {% if payments_pagination.has_prev %}<button class="button button-secondary" name="payments_page" value="{{ payments_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
                 {% for page_number in payments_pagination.pages %}<button class="button {% if page_number == payments_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="payments_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
@@ -339,7 +340,7 @@
             </form>
         </div>
 
-        <div class="data-card" id="orders-panel" data-admin-panel tabindex="-1">
+        <div class="data-card" id="orders-section" data-admin-panel tabindex="-1">
             <h2>Orders</h2>
             <table>
                 <thead><tr><th>When</th><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr></thead>
@@ -357,7 +358,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#orders-section" data-admin-preserve="true" data-return-anchor="orders-section">
                 <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
                 {% if orders_pagination.has_prev %}<button class="button button-secondary" name="orders_page" value="{{ orders_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
                 {% for page_number in orders_pagination.pages %}<button class="button {% if page_number == orders_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="orders_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
@@ -365,7 +366,7 @@
             </form>
         </div>
 
-        <div class="data-card" id="support-panel" data-admin-panel tabindex="-1">
+        <div class="data-card" id="support-section" data-admin-panel tabindex="-1">
             <h2>Support tickets</h2>
             <table>
                 <thead><tr><th>When</th><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr></thead>
@@ -383,7 +384,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#support-section" data-admin-preserve="true" data-return-anchor="support-section">
                 <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
                 {% if support_pagination.has_prev %}<button class="button button-secondary" name="support_page" value="{{ support_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
                 {% for page_number in support_pagination.pages %}<button class="button {% if page_number == support_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="support_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
@@ -391,7 +392,7 @@
             </form>
         </div>
 
-        <div class="data-card" id="question-reports-panel" data-admin-panel tabindex="-1">
+        <div class="data-card" id="reports-section" data-admin-panel tabindex="-1">
             <h2>Question reports / reviews</h2>
             <table>
                 <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Question</th><th>Reason</th></tr></thead>
@@ -410,7 +411,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#reports-section" data-admin-preserve="true" data-return-anchor="reports-section">
                 <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
                 {% if reports_pagination.has_prev %}<button class="button button-secondary" name="reports_page" value="{{ reports_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
                 {% for page_number in reports_pagination.pages %}<button class="button {% if page_number == reports_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="reports_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
@@ -418,7 +419,7 @@
             </form>
         </div>
 
-        <div class="data-card" id="user-logs-panel" data-admin-panel tabindex="-1">
+        <div class="data-card" id="user-logs-section" data-admin-panel tabindex="-1">
             <h2>User logs</h2>
             <table>
                 <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Score</th><th>Ended</th></tr></thead>
@@ -437,7 +438,7 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+            <form class="pagination-controls" method="get" accept-charset="UTF-8" action="{{ url_for('admin.admin_dashboard') }}#user-logs-section" data-admin-preserve="true" data-return-anchor="user-logs-section">
                 <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
                 {% if user_logs_pagination.has_prev %}<button class="button button-secondary" name="user_logs_page" value="{{ user_logs_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
                 {% for page_number in user_logs_pagination.pages %}<button class="button {% if page_number == user_logs_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="user_logs_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}

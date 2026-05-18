@@ -238,7 +238,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 document.addEventListener("DOMContentLoaded", function () {
-    if (!document.querySelector("[data-admin-dashboard='true']")) {
+    if (!document.querySelector("[data-admin-scroll-preserve='true']") && !document.querySelector("[data-admin-dashboard='true']")) {
         return;
     }
 
