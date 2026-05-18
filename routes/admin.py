@@ -45,11 +45,15 @@ def _sanitize_admin_anchor(value: str | None) -> str | None:
     return anchor
 
 
-def _admin_dashboard_redirect(redirect_values: dict[str, str | int], *, anchor: str | None = None):
-    location = url_for("admin.admin_dashboard", **redirect_values)
+def _admin_redirect(endpoint: str, redirect_values: dict[str, str | int] | None = None, *, anchor: str | None = None):
+    location = url_for(endpoint, **(redirect_values or {}))
     if anchor:
         location = f"{location}#{anchor}"
     return redirect(location)
+
+
+def _admin_dashboard_redirect(redirect_values: dict[str, str | int], *, anchor: str | None = None):
+    return _admin_redirect("admin.admin_dashboard", redirect_values, anchor=anchor)
 
 
 def admin_required(view_func):
@@ -549,155 +553,208 @@ def cleanup_questions():
         return jsonify({"ok": False, "batch_id": batch_id, "error": str(exc)}), 500
 
 
+def _coerce_positive_int(value, default: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_values: dict[str, str | int]):
+    action = (request.form.get("action") or "").strip()
+    return_anchor = _sanitize_admin_anchor(request.form.get("return_anchor") or request.args.get("return_anchor"))
+
+    try:
+        if action == "update_price":
+            payment_service.update_premium_price(
+                request.form.get("plan_type", ""),
+                request.form.get("amount", ""),
+            )
+            flash("Premium price updated successfully.", "success")
+        elif action == "save_plan":
+            saved_plan = web_admin_service.save_admin_plan(
+                plan_id=int(request.form.get("plan_id", "0") or "0") or None,
+                name=request.form.get("name", ""),
+                price_text=request.form.get("price", ""),
+                duration_days=request.form.get("duration_days", ""),
+                benefits=request.form.get("benefits") or None,
+                billing_period=request.form.get("billing_period", ""),
+                is_active=bool(request.form.get("is_active")),
+            )
+            flash("Plan updated successfully." if request.form.get("plan_id") else "Plan added successfully.", "success")
+            if endpoint == "admin.admin_dashboard":
+                redirect_values["edit_plan_id"] = saved_plan.get("plan_id", "")
+        elif action == "toggle_plan":
+            updated = web_admin_service.set_plan_active(
+                int(request.form.get("plan_id", "0")),
+                request.form.get("active_state", "1") == "1",
+            )
+            if not updated:
+                raise ValueError("Plan not found.")
+            flash("Plan status updated successfully.", "success")
+        elif action == "add_exam":
+            web_admin_service.add_exam(
+                request.form.get("title", ""),
+                request.form.get("description") or None,
+            )
+            flash("Exam added successfully.", "success")
+        elif action == "add_set":
+            web_admin_service.add_set(
+                exam_id=int(request.form.get("exam_id", "0")),
+                title=request.form.get("title", ""),
+                description=request.form.get("description") or None,
+                is_premium_locked=bool(request.form.get("is_premium_locked")),
+            )
+            flash("Set added successfully.", "success")
+        elif action == "update_set_position":
+            updated = web_admin_service.update_set_position(
+                int(request.form.get("set_id", "0")),
+                int(request.form.get("position", "0") or "0"),
+            )
+            if not updated:
+                raise ValueError("Set not found.")
+            flash("Set order updated successfully.", "success")
+        elif action == "save_question":
+            question_id = int(request.form.get("question_id", "0") or "0") or None
+            existing_question = web_admin_service.get_question(question_id) if question_id else None
+            existing_image_path = (
+                request.form.get("current_image_path")
+                or (existing_question.get("image_path") if existing_question else None)
+                or None
+            )
+            remove_current_image = bool(request.form.get("remove_image"))
+            uploaded_image_path = None
+            try:
+                uploaded_image_path = save_question_image(request.files.get("question_image"))
+                resolved_image_path = uploaded_image_path or (None if remove_current_image else existing_image_path)
+                question_result = (
+                    web_admin_service.update_question(
+                        question_id=question_id,
+                        set_id=int(request.form.get("set_id", "0")),
+                        question_text=request.form.get("question_text", ""),
+                        options=[
+                            request.form.get("option_a", ""),
+                            request.form.get("option_b", ""),
+                            request.form.get("option_c", ""),
+                            request.form.get("option_d", ""),
+                        ],
+                        correct_option=request.form.get("correct_option", ""),
+                        explanation=request.form.get("explanation") or None,
+                        image_path=resolved_image_path,
+                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                    )
+                    if question_id
+                    else web_admin_service.add_question(
+                        set_id=int(request.form.get("set_id", "0")),
+                        question_text=request.form.get("question_text", ""),
+                        options=[
+                            request.form.get("option_a", ""),
+                            request.form.get("option_b", ""),
+                            request.form.get("option_c", ""),
+                            request.form.get("option_d", ""),
+                        ],
+                        correct_option=request.form.get("correct_option", ""),
+                        explanation=request.form.get("explanation") or None,
+                        image_path=resolved_image_path,
+                        time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                    )
+                )
+            except Exception:
+                if uploaded_image_path:
+                    delete_question_image(uploaded_image_path)
+                raise
+            if existing_image_path and existing_image_path != resolved_image_path:
+                delete_question_image(existing_image_path)
+            operation = question_result.get("operation") or "saved"
+            if operation == "created":
+                flash("Question saved successfully.", "success")
+            elif operation == "updated":
+                flash("Question updated successfully.", "success")
+            else:
+                flash("Duplicate question in this set was replaced with the latest version.", "success")
+        elif action == "bulk_import":
+            created = web_admin_service.bulk_import_questions(
+                set_id=int(request.form.get("set_id", "0")),
+                raw_text=request.form.get("bulk_payload", ""),
+            )
+            replaced_count = sum(1 for item in created if item.get("operation") == "replaced")
+            created_count = sum(1 for item in created if item.get("operation") == "created")
+            updated_count = sum(1 for item in created if item.get("operation") == "updated")
+            flash(
+                f"Bulk import completed: {created_count} created, {replaced_count} replaced, {updated_count} updated.",
+                "success",
+            )
+        elif action == "toggle_set_lock":
+            web_admin_service.set_set_lock(
+                set_id=int(request.form.get("set_id", "0")),
+                is_locked=request.form.get("lock_state", "0") == "1",
+            )
+            flash("Set access updated successfully.", "success")
+        elif action == "delete_question":
+            deleted = web_admin_service.delete_question(int(request.form.get("question_id", "0")))
+            flash("Question deleted successfully." if deleted else "Question not found.", "success" if deleted else "error")
+        elif action == "delete_set":
+            web_admin_service.delete_set(int(request.form.get("set_id", "0")))
+            flash("Set deleted successfully.", "success")
+        elif action == "delete_exam":
+            web_admin_service.delete_exam(int(request.form.get("exam_id", "0")))
+            flash("Exam deleted successfully.", "success")
+        elif action == "change_role":
+            if not _is_super_admin(current_user):
+                raise ValueError("Only the super admin can change website roles.")
+            updated_user, status = web_admin_service.change_user_role(
+                int(request.form.get("target_user_id", "0")),
+                request.form.get("target_role", ""),
+            )
+            if not updated_user and status == "not_found":
+                raise ValueError("Target user not found.")
+            flash("User role updated successfully.", "success")
+        else:
+            flash("Unknown admin action.", "error")
+    except Exception as exc:
+        posted_question_id = int(request.form.get("question_id", "0") or "0")
+        if posted_question_id:
+            redirect_values["edit_question_id"] = posted_question_id
+        posted_plan_id = int(request.form.get("plan_id", "0") or "0")
+        if posted_plan_id and endpoint == "admin.admin_dashboard":
+            redirect_values["edit_plan_id"] = posted_plan_id
+        flash(str(exc), "error")
+    return _admin_redirect(endpoint, redirect_values, anchor=return_anchor)
+
+
 @admin_blueprint.route("/admin", methods=["GET", "POST"])
 @admin_required
 def admin_dashboard():
     current_user = web_identity_service.get_authenticated_user_snapshot()
 
     if request.method == "POST":
-        action = (request.form.get("action") or "").strip()
-        current_query = (request.args.get("q") or request.form.get("q") or "").strip()
         redirect_values: dict[str, str | int] = {}
-        return_anchor = _sanitize_admin_anchor(request.form.get("return_anchor") or request.args.get("return_anchor"))
-        if current_query:
-            redirect_values["q"] = current_query
-
-        try:
-            if action == "update_price":
-                payment_service.update_premium_price(
-                    request.form.get("plan_type", ""),
-                    request.form.get("amount", ""),
-                )
-                flash("Premium price updated successfully.", "success")
-            elif action == "add_exam":
-                web_admin_service.add_exam(
-                    request.form.get("title", ""),
-                    request.form.get("description") or None,
-                )
-                flash("Exam added successfully.", "success")
-            elif action == "add_set":
-                web_admin_service.add_set(
-                    exam_id=int(request.form.get("exam_id", "0")),
-                    title=request.form.get("title", ""),
-                    description=request.form.get("description") or None,
-                    is_premium_locked=bool(request.form.get("is_premium_locked")),
-                )
-                flash("Set added successfully.", "success")
-            elif action == "save_question":
-                question_id = int(request.form.get("question_id", "0") or "0") or None
-                existing_question = web_admin_service.get_question(question_id) if question_id else None
-                existing_image_path = (
-                    request.form.get("current_image_path")
-                    or (existing_question.get("image_path") if existing_question else None)
-                    or None
-                )
-                remove_current_image = bool(request.form.get("remove_image"))
-                uploaded_image_path = None
-                try:
-                    uploaded_image_path = save_question_image(request.files.get("question_image"))
-                    resolved_image_path = uploaded_image_path or (None if remove_current_image else existing_image_path)
-                    question_result = (
-                        web_admin_service.update_question(
-                            question_id=question_id,
-                            set_id=int(request.form.get("set_id", "0")),
-                            question_text=request.form.get("question_text", ""),
-                            options=[
-                                request.form.get("option_a", ""),
-                                request.form.get("option_b", ""),
-                                request.form.get("option_c", ""),
-                                request.form.get("option_d", ""),
-                            ],
-                            correct_option=request.form.get("correct_option", ""),
-                            explanation=request.form.get("explanation") or None,
-                            image_path=resolved_image_path,
-                            time_limit=int(request.form.get("time_limit", "0") or "0") or None,
-                        )
-                        if question_id
-                        else web_admin_service.add_question(
-                            set_id=int(request.form.get("set_id", "0")),
-                            question_text=request.form.get("question_text", ""),
-                            options=[
-                                request.form.get("option_a", ""),
-                                request.form.get("option_b", ""),
-                                request.form.get("option_c", ""),
-                                request.form.get("option_d", ""),
-                            ],
-                            correct_option=request.form.get("correct_option", ""),
-                            explanation=request.form.get("explanation") or None,
-                            image_path=resolved_image_path,
-                            time_limit=int(request.form.get("time_limit", "0") or "0") or None,
-                        )
-                    )
-                except Exception:
-                    if uploaded_image_path:
-                        delete_question_image(uploaded_image_path)
-                    raise
-                if existing_image_path and existing_image_path != resolved_image_path:
-                    delete_question_image(existing_image_path)
-                operation = question_result.get("operation") or "saved"
-                if operation == "created":
-                    flash("Question saved successfully.", "success")
-                elif operation == "updated":
-                    flash("Question updated successfully.", "success")
-                else:
-                    flash("Duplicate question in this set was replaced with the latest version.", "success")
-            elif action == "bulk_import":
-                created = web_admin_service.bulk_import_questions(
-                    set_id=int(request.form.get("set_id", "0")),
-                    raw_text=request.form.get("bulk_payload", ""),
-                )
-                replaced_count = sum(1 for item in created if item.get("operation") == "replaced")
-                created_count = sum(1 for item in created if item.get("operation") == "created")
-                updated_count = sum(1 for item in created if item.get("operation") == "updated")
-                flash(
-                    f"Bulk import completed: {created_count} created, {replaced_count} replaced, {updated_count} updated.",
-                    "success",
-                )
-            elif action == "toggle_set_lock":
-                web_admin_service.set_set_lock(
-                    set_id=int(request.form.get("set_id", "0")),
-                    is_locked=request.form.get("lock_state", "0") == "1",
-                )
-                flash("Set access updated successfully.", "success")
-            elif action == "delete_question":
-                deleted = web_admin_service.delete_question(int(request.form.get("question_id", "0")))
-                flash("Question deleted successfully." if deleted else "Question not found.", "success" if deleted else "error")
-            elif action == "delete_set":
-                web_admin_service.delete_set(int(request.form.get("set_id", "0")))
-                flash("Set deleted successfully.", "success")
-            elif action == "delete_exam":
-                web_admin_service.delete_exam(int(request.form.get("exam_id", "0")))
-                flash("Exam deleted successfully.", "success")
-            elif action == "change_role":
-                if not _is_super_admin(current_user):
-                    raise ValueError("Only the super admin can change website roles.")
-                updated_user, status = web_admin_service.change_user_role(
-                    int(request.form.get("target_user_id", "0")),
-                    request.form.get("target_role", ""),
-                )
-                if not updated_user and status == "not_found":
-                    raise ValueError("Target user not found.")
-                flash("User role updated successfully.", "success")
-            else:
-                flash("Unknown admin action.", "error")
-        except Exception as exc:
-            posted_question_id = int(request.form.get("question_id", "0") or "0")
-            if posted_question_id:
-                redirect_values["edit_question_id"] = posted_question_id
-            flash(str(exc), "error")
-        return _admin_dashboard_redirect(redirect_values, anchor=return_anchor)
+        search_query = (request.form.get("q") or request.args.get("q") or "").strip()
+        if search_query:
+            redirect_values["q"] = search_query
+        for key in ("users_page", "payments_page", "orders_page", "support_page", "reports_page", "user_logs_page", "users_from", "users_to", "logs_from", "logs_to"):
+            value = (request.form.get(key) or request.args.get(key) or "").strip()
+            if value:
+                redirect_values[key] = value
+        return _handle_admin_post(current_user, endpoint="admin.admin_dashboard", redirect_values=redirect_values)
 
     search_query = (request.args.get("q") or "").strip()
-    edit_question_id_raw = (request.args.get("edit_question_id") or "").strip()
-    edit_question_id = None
-    if edit_question_id_raw.isdigit():
-        edit_question_id = int(edit_question_id_raw)
     dashboard = web_admin_service.dashboard_page_data(
         search_text=search_query,
-        edit_question_id=edit_question_id,
+        edit_question_id=_coerce_positive_int(request.args.get("edit_question_id"), 0) or None,
+        edit_plan_id=_coerce_positive_int(request.args.get("edit_plan_id"), 0) or None,
+        users_page=_coerce_positive_int(request.args.get("users_page"), 1),
+        payments_page=_coerce_positive_int(request.args.get("payments_page"), 1),
+        orders_page=_coerce_positive_int(request.args.get("orders_page"), 1),
+        support_page=_coerce_positive_int(request.args.get("support_page"), 1),
+        reports_page=_coerce_positive_int(request.args.get("reports_page"), 1),
+        user_logs_page=_coerce_positive_int(request.args.get("user_logs_page"), 1),
+        users_from=request.args.get("users_from"),
+        users_to=request.args.get("users_to"),
+        logs_from=request.args.get("logs_from"),
+        logs_to=request.args.get("logs_to"),
     )
-
-    admin_return_anchor = _sanitize_admin_anchor(request.args.get("return_anchor"))
 
     return render_template(
         "admin_dashboard.html",
@@ -706,6 +763,79 @@ def admin_dashboard():
         admin_authenticated=True,
         current_user=current_user,
         search_query=search_query,
-        admin_return_anchor=admin_return_anchor,
+        admin_return_anchor=_sanitize_admin_anchor(request.args.get("return_anchor")),
         **dashboard,
+    )
+
+
+@admin_blueprint.route("/admin/exams", methods=["GET", "POST"])
+@admin_required
+def admin_exams():
+    current_user = web_identity_service.get_authenticated_user_snapshot()
+    if request.method == "POST":
+        return _handle_admin_post(current_user, endpoint="admin.admin_exams", redirect_values={})
+
+    return render_template(
+        "admin_exams.html",
+        page_title="Admin Exams",
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=True,
+        current_user=current_user,
+        exams=web_admin_service.list_exams_overview(),
+    )
+
+
+@admin_blueprint.route("/admin/exams/<int:exam_id>/sets", methods=["GET", "POST"])
+@admin_required
+def admin_exam_sets(exam_id: int):
+    current_user = web_identity_service.get_authenticated_user_snapshot()
+    page = _coerce_positive_int(request.args.get("page"), 1)
+    if request.method == "POST":
+        redirect_values = {"exam_id": exam_id}
+        page_value = (request.form.get("page") or request.args.get("page") or "").strip()
+        if page_value:
+            redirect_values["page"] = page_value
+        return _handle_admin_post(current_user, endpoint="admin.admin_exam_sets", redirect_values=redirect_values)
+
+    exam, sets, pagination = web_admin_service.list_sets_for_exam(exam_id, page=page, per_page=10)
+    if not exam:
+        flash("Exam not found.", "error")
+        return redirect(url_for("admin.admin_exams"))
+
+    return render_template(
+        "admin_sets.html",
+        page_title=f"{exam['title']} Sets",
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=True,
+        current_user=current_user,
+        exam=exam,
+        sets=sets,
+        pagination=pagination,
+    )
+
+
+@admin_blueprint.route("/admin/sets/<int:set_id>/questions", methods=["GET", "POST"])
+@admin_required
+def admin_set_questions(set_id: int):
+    current_user = web_identity_service.get_authenticated_user_snapshot()
+    set_overview = web_admin_service.get_set_overview(set_id)
+    if not set_overview:
+        flash("Set not found.", "error")
+        return redirect(url_for("admin.admin_exams"))
+
+    if request.method == "POST":
+        return _handle_admin_post(current_user, endpoint="admin.admin_set_questions", redirect_values={"set_id": set_id})
+
+    edit_question_id = _coerce_positive_int(request.args.get("edit_question_id"), 0) or None
+    editing_question = web_admin_service.get_question(edit_question_id) if edit_question_id else None
+
+    return render_template(
+        "admin_questions.html",
+        page_title=f"{set_overview['title']} Questions",
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=True,
+        current_user=current_user,
+        set_overview=set_overview,
+        questions=web_admin_service.list_questions_for_set(set_id),
+        editing_question=editing_question,
     )

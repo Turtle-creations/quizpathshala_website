@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Questions Manager</span>
+        <h1>{{ set_overview.exam_title }} - {{ set_overview.title }}</h1>
+        <p>{{ set_overview.description or 'All questions for this set are loaded below without pagination.' }}</p>
+        <div class="hero-actions">
+            <a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=set_overview.exam_id) }}">Back to sets</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="form-card" id="question-editor">
+            <h2>{{ 'Edit question' if editing_question else 'Add question to this set' }}</h2>
+            <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="save_question">
+                <input type="hidden" name="return_anchor" value="question-editor">
+                <input type="hidden" name="set_id" value="{{ set_overview.set_id }}">
+                <input type="hidden" name="question_id" value="{{ editing_question.question_id if editing_question else '' }}">
+                <input type="hidden" name="current_image_path" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
+                <label for="question_text">Question</label>
+                <textarea id="question_text" name="question_text" rows="4">{{ editing_question.question_text if editing_question else '' }}</textarea>
+                <label for="option_a">Option A</label><input id="option_a" name="option_a" type="text" value="{{ editing_question.option_a if editing_question else '' }}">
+                <label for="option_b">Option B</label><input id="option_b" name="option_b" type="text" value="{{ editing_question.option_b if editing_question else '' }}">
+                <label for="option_c">Option C</label><input id="option_c" name="option_c" type="text" value="{{ editing_question.option_c if editing_question else '' }}">
+                <label for="option_d">Option D</label><input id="option_d" name="option_d" type="text" value="{{ editing_question.option_d if editing_question else '' }}">
+                <label for="correct_option">Correct option text</label>
+                <input id="correct_option" name="correct_option" type="text" value="{{ editing_question.correct_option if editing_question else '' }}">
+                <label for="explanation">Explanation</label>
+                <textarea id="explanation" name="explanation" rows="3">{{ editing_question.explanation if editing_question and editing_question.explanation else '' }}</textarea>
+                <label for="question_image">Question image</label>
+                <input id="question_image" name="question_image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+                {% if editing_question and editing_question.image_path %}
+                <img class="question-image admin-question-image-preview" src="{{ url_for('media_file', relative_path=editing_question.image_path) }}" alt="Current question image">
+                <label><input type="checkbox" name="remove_image" value="1"> Remove current image</label>
+                {% endif %}
+                <label for="time_limit">Time limit in seconds</label>
+                <input id="time_limit" name="time_limit" type="number" min="1" value="{{ editing_question.time_limit if editing_question else '' }}" placeholder="15">
+                <div class="hero-actions">
+                    <button class="button button-primary" type="submit">{{ 'Update Question' if editing_question else 'Save Question' }}</button>
+                    {% if editing_question %}<a class="button button-secondary" href="{{ url_for('admin.admin_set_questions', set_id=set_overview.set_id) }}#question-editor">Cancel</a>{% endif %}
+                </div>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2>Bulk upload into {{ set_overview.title }}</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="bulk_import">
+                <input type="hidden" name="set_id" value="{{ set_overview.set_id }}">
+                <input type="hidden" name="return_anchor" value="bulk-upload">
+                <label for="bulk_payload">Pipe-separated rows</label>
+                <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg"></textarea>
+                <button class="button button-primary" type="submit">Import Questions</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card" id="questions-list">
+            <h2>All questions in {{ set_overview.title }}</h2>
+            <table>
+                <thead><tr><th>ID</th><th>Question</th><th>Correct</th><th>Image</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for question in questions %}
+                    <tr>
+                        <td>{{ question.question_id }}</td>
+                        <td>{{ question.question_text }}</td>
+                        <td>{{ question.correct_option }}</td>
+                        <td>{{ 'Yes' if question.image_path else 'No' }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_set_questions', set_id=set_overview.set_id, edit_question_id=question.question_id) }}#question-editor">Edit</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?">
+                                    <input type="hidden" name="action" value="delete_question">
+                                    <input type="hidden" name="question_id" value="{{ question.question_id }}">
+                                    <input type="hidden" name="return_anchor" value="questions-list">
+                                    <button class="button button-secondary" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5">No questions yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

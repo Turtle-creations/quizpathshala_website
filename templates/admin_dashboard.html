@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div data-admin-dashboard="true"></div>
 <section class="page-hero">
     <div class="container">
         <span class="eyebrow">Admin Panel</span>
         <h1>QuizPathshala management</h1>
-        <p>Manage shared users, premium pricing, exams, sets, questions, and web support while the Telegram bot continues using the same database.</p>
-        <form accept-charset="UTF-8" method="post" action="{{ url_for('admin.admin_logout') }}" data-disable-on-submit="true">
-            <button class="button button-secondary" type="submit">Log Out</button>
-        </form>
+        <p>Manage plans, users, exams, sets, questions, and logs without touching the live quiz, payment, or login flows.</p>
+        <div class="hero-actions">
+            <a class="button button-primary" href="{{ url_for('admin.admin_exams') }}">Open Exam Manager</a>
+            <form accept-charset="UTF-8" method="post" action="{{ url_for('admin.admin_logout') }}" data-disable-on-submit="true">
+                <button class="button button-secondary" type="submit">Log Out</button>
+            </form>
+        </div>
     </div>
 </section>
 
@@ -24,12 +26,71 @@
 
 <section class="section">
     <div class="container admin-grid">
+        <div class="form-card" id="plans-manager" data-admin-panel tabindex="-1">
+            <h2>{{ 'Edit premium plan' if editing_plan else 'Add premium plan' }}</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
+                <input type="hidden" name="action" value="save_plan">
+                <input type="hidden" name="plan_id" value="{{ editing_plan.plan_id if editing_plan else '' }}">
+                <input type="hidden" name="q" value="{{ search_query }}">
+                <input type="hidden" name="return_anchor" value="plans-manager">
+                <label for="plan_name">Plan name</label>
+                <input id="plan_name" name="name" type="text" value="{{ editing_plan.name if editing_plan else '' }}" placeholder="Monthly Premium">
+                <label for="plan_price">Price in INR</label>
+                <input id="plan_price" name="price" type="text" value="{{ '%.2f'|format(editing_plan.price_rupees) if editing_plan else '' }}" placeholder="299">
+                <label for="plan_duration_days">Duration in days</label>
+                <input id="plan_duration_days" name="duration_days" type="number" min="1" value="{{ editing_plan.duration_days if editing_plan else '' }}" placeholder="30">
+                <label for="plan_period">Billing period</label>
+                <select id="plan_period" name="billing_period">
+                    <option value="monthly" {% if editing_plan and editing_plan.billing_period == 'monthly' %}selected{% endif %}>Monthly</option>
+                    <option value="annual" {% if editing_plan and editing_plan.billing_period == 'annual' %}selected{% endif %}>Annual</option>
+                </select>
+                <label for="plan_benefits">Benefits</label>
+                <textarea id="plan_benefits" name="benefits" rows="4" placeholder="One benefit per line">{{ editing_plan.benefits if editing_plan else '' }}</textarea>
+                <label><input type="checkbox" name="is_active" value="1" {% if not editing_plan or editing_plan.is_active %}checked{% endif %}> Active</label>
+                <div class="hero-actions">
+                    <button class="button button-primary" type="submit">{{ 'Update Plan' if editing_plan else 'Add Plan' }}</button>
+                    {% if editing_plan %}<a class="button button-secondary" href="{{ url_for('admin.admin_dashboard') }}#plans-manager">Cancel</a>{% endif %}
+                </div>
+            </form>
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>Period</th><th>Price</th><th>Duration</th><th>Status</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for plan in plans %}
+                    <tr>
+                        <td>{{ plan.name }}</td>
+                        <td>{{ plan.billing_period|title }}</td>
+                        <td>INR {{ '%.2f'|format(plan.price_rupees) }}</td>
+                        <td>{{ plan.duration_days }} days</td>
+                        <td>{{ 'Active' if plan.is_active else 'Disabled' }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', edit_plan_id=plan.plan_id) }}#plans-manager">Edit</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                                    <input type="hidden" name="action" value="toggle_plan">
+                                    <input type="hidden" name="plan_id" value="{{ plan.plan_id }}">
+                                    <input type="hidden" name="active_state" value="{{ 0 if plan.is_active else 1 }}">
+                                    <input type="hidden" name="return_anchor" value="plans-manager">
+                                    <button class="button button-secondary" type="submit">{{ 'Disable' if plan.is_active else 'Enable' }}</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">No admin-managed plans yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         <div class="form-card" id="premium-prices" data-admin-panel tabindex="-1">
-            <h2>Update premium prices</h2>
+            <h2>Current checkout prices</h2>
             <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="update_price">
                 <input type="hidden" name="q" value="{{ search_query }}">
-                <label for="plan_type">Plan</label>
+                <input type="hidden" name="return_anchor" value="premium-prices">
+                <label for="plan_type">Checkout plan</label>
                 <select id="plan_type" name="plan_type">
                     <option value="week_1">week_1</option>
                     <option value="month_1">month_1</option>
@@ -46,45 +107,12 @@
             </div>
         </div>
 
-        <div class="form-card" id="exam-creator" data-admin-panel tabindex="-1">
-            <h2>Add exam</h2>
-            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
-                <input type="hidden" name="action" value="add_exam">
-                <input type="hidden" name="q" value="{{ search_query }}">
-                <label for="exam_title">Exam title</label>
-                <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
-                <label for="exam_description">Description</label>
-                <textarea id="exam_description" name="description" rows="3"></textarea>
-                <button class="button button-primary" type="submit">Create Exam</button>
-            </form>
-        </div>
-
-        <div class="form-card" id="set-creator" data-admin-panel tabindex="-1">
-            <h2>Add set</h2>
-            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
-                <input type="hidden" name="action" value="add_set">
-                <input type="hidden" name="q" value="{{ search_query }}">
-                <label for="set_exam_id">Exam</label>
-                <select id="set_exam_id" name="exam_id">
-                    {% for exam in exams %}
-                    <option value="{{ exam.exam_id }}">{{ exam.title }}</option>
-                    {% endfor %}
-                </select>
-                <label for="set_title">Set title</label>
-                <input id="set_title" name="title" type="text" placeholder="Set 1">
-                <label for="set_description">Description</label>
-                <textarea id="set_description" name="description" rows="3"></textarea>
-                <label><input type="checkbox" name="is_premium_locked" value="1"> Premium locked</label>
-                <button class="button button-primary" type="submit">Create Set</button>
-            </form>
-        </div>
-
         <div class="form-card" id="question-editor" data-admin-panel tabindex="-1">
             <h2>{{ 'Edit question' if editing_question else 'Add single question' }}</h2>
             <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="save_question">
                 <input type="hidden" name="q" value="{{ search_query }}">
-                {% if admin_return_anchor %}<input type="hidden" name="return_anchor" value="{{ admin_return_anchor }}">{% endif %}
+                <input type="hidden" name="return_anchor" value="question-editor">
                 <input type="hidden" name="question_id" value="{{ editing_question.question_id if editing_question else '' }}">
                 <input type="hidden" name="current_image_path" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
                 <label for="question_set_id">Set name</label>
@@ -100,23 +128,20 @@
                 <label for="option_c">Option C</label><input id="option_c" name="option_c" type="text" value="{{ editing_question.option_c if editing_question else '' }}">
                 <label for="option_d">Option D</label><input id="option_d" name="option_d" type="text" value="{{ editing_question.option_d if editing_question else '' }}">
                 <label for="correct_option">Correct option text</label>
-                <input id="correct_option" name="correct_option" type="text" placeholder="Option text, not A/B/C/D" value="{{ editing_question.correct_option if editing_question else '' }}">
+                <input id="correct_option" name="correct_option" type="text" value="{{ editing_question.correct_option if editing_question else '' }}">
                 <label for="explanation">Explanation</label>
                 <textarea id="explanation" name="explanation" rows="3">{{ editing_question.explanation if editing_question and editing_question.explanation else '' }}</textarea>
-                <label for="question_image">Question image (optional)</label>
+                <label for="question_image">Question image</label>
                 <input id="question_image" name="question_image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
                 {% if editing_question and editing_question.image_path %}
                 <img class="question-image admin-question-image-preview" src="{{ url_for('media_file', relative_path=editing_question.image_path) }}" alt="Current question image">
                 <label><input type="checkbox" name="remove_image" value="1"> Remove current image</label>
                 {% endif %}
                 <label for="time_limit">Time limit in seconds</label>
-                <input id="time_limit" name="time_limit" type="number" min="1" placeholder="15" value="{{ editing_question.time_limit if editing_question else '' }}">
-                <p class="helper-text">If the same question already exists in the selected set, the latest save will update that record instead of creating a duplicate.</p>
+                <input id="time_limit" name="time_limit" type="number" min="1" value="{{ editing_question.time_limit if editing_question else '' }}" placeholder="15">
                 <div class="hero-actions">
                     <button class="button button-primary" type="submit">{{ 'Update Question' if editing_question else 'Save Question' }}</button>
-                    {% if editing_question %}
-                    <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query) }}#{{ admin_return_anchor or 'question-editor' }}">Cancel Edit</a>
-                    {% endif %}
+                    {% if editing_question %}<a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query) }}#question-editor">Cancel</a>{% endif %}
                 </div>
             </form>
         </div>
@@ -126,6 +151,7 @@
             <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="bulk_import">
                 <input type="hidden" name="q" value="{{ search_query }}">
+                <input type="hidden" name="return_anchor" value="bulk-question-upload">
                 <label for="bulk_set_id">Set name</label>
                 <select id="bulk_set_id" name="set_id">
                     {% for set_choice in set_choices %}
@@ -134,7 +160,6 @@
                 </select>
                 <label for="bulk_payload">Pipe-separated rows</label>
                 <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg"></textarea>
-                <p class="helper-text">Duplicate questions in the same set will be replaced instead of saved twice.</p>
                 <button class="button button-primary" type="submit">Import Questions</button>
             </form>
         </div>
@@ -144,10 +169,20 @@
 <section class="section">
     <div class="container admin-grid">
         <div class="data-card" id="users-and-roles" data-admin-panel tabindex="-1">
-            <h2>Users and roles</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Users and roles</h2>
+                    <p class="helper-text">Latest users first. Filter by join date and page through 10 at a time.</p>
+                </div>
+                <form class="compact-toolbar" method="get" accept-charset="UTF-8">
+                    <input type="date" name="users_from" value="{{ filters.users_from }}">
+                    <input type="date" name="users_to" value="{{ filters.users_to }}">
+                    <button class="button button-secondary" type="submit">Filter</button>
+                </form>
+            </div>
             <table>
                 <thead>
-                    <tr><th>Name</th><th>Role</th><th>Premium</th><th>Score</th><th>Action</th></tr>
+                    <tr><th>Name</th><th>Role</th><th>Premium</th><th>Joined</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
@@ -155,14 +190,17 @@
                         <td>{{ user.full_name }}</td>
                         <td>{{ user.user_role }}</td>
                         <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
-                        <td>{{ '%.2f'|format(user.score) }}</td>
+                        <td>{{ user.created_at|format_user_datetime(current_user) }}</td>
                         <td>
                             {% if current_user.user_role == 'super_admin' and user.user_role != 'super_admin' %}
-                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
                                 <input type="hidden" name="action" value="change_role">
-                                <input type="hidden" name="q" value="{{ search_query }}">
                                 <input type="hidden" name="target_user_id" value="{{ user.user_id }}">
                                 <input type="hidden" name="target_role" value="{{ 'user' if user.user_role == 'admin' else 'admin' }}">
+                                <input type="hidden" name="users_page" value="{{ users_pagination.page }}">
+                                <input type="hidden" name="users_from" value="{{ filters.users_from }}">
+                                <input type="hidden" name="users_to" value="{{ filters.users_to }}">
+                                <input type="hidden" name="return_anchor" value="users-and-roles">
                                 <button class="button button-secondary" type="submit">Make {{ 'User' if user.user_role == 'admin' else 'Admin' }}</button>
                             </form>
                             {% else %}
@@ -170,15 +208,31 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% else %}
+                    <tr><td colspan="5">No users found for this date range.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="users_from" value="{{ filters.users_from }}">
+                <input type="hidden" name="users_to" value="{{ filters.users_to }}">
+                {% if users_pagination.has_prev %}<button class="button button-secondary" name="users_page" value="{{ users_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in users_pagination.pages %}
+                <button class="button {% if page_number == users_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="users_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>
+                {% endfor %}
+                {% if users_pagination.has_next %}<button class="button button-secondary" name="users_page" value="{{ users_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
         </div>
 
         <div class="data-card" id="question-search" data-admin-panel tabindex="-1">
-            <h2>Question search</h2>
-            <form accept-charset="UTF-8" method="get" data-disable-on-submit="true" data-admin-preserve="true">
-                <input type="hidden" name="return_anchor" value="question-search">
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Question search</h2>
+                    <p class="helper-text">Search text quickly, then jump into the set-specific question manager if needed.</p>
+                </div>
+                <a class="button button-secondary" href="{{ url_for('admin.admin_exams') }}">Exam manager</a>
+            </div>
+            <form accept-charset="UTF-8" method="get" data-disable-on-submit="true">
                 <label for="question_search">Search by question text</label>
                 <input id="question_search" name="q" type="text" value="{{ search_query }}" placeholder="constitution, math, reasoning...">
                 <button class="button button-primary" type="submit">Search</button>
@@ -196,11 +250,12 @@
                         <td>{{ item.question_text }}</td>
                         <td>
                             <div class="table-actions">
-                                <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query, edit_question_id=item.question_id, return_anchor='question-search') }}#question-editor">Edit</a>
-                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true" data-confirm="Delete this question only?">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_set_questions', set_id=item.set_id, edit_question_id=item.question_id) }}#question-editor">Open</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?">
                                     <input type="hidden" name="action" value="delete_question">
                                     <input type="hidden" name="q" value="{{ search_query }}">
                                     <input type="hidden" name="question_id" value="{{ item.question_id }}">
+                                    <input type="hidden" name="return_anchor" value="question-search">
                                     <button class="button button-secondary" type="submit">Delete</button>
                                 </form>
                             </div>
@@ -217,80 +272,31 @@
 
 <section class="section">
     <div class="container narrow">
-        <div class="data-card" id="question-manager" data-admin-panel tabindex="-1">
-            <h2>Exam, set, and question manager</h2>
-            {% for exam in catalog %}
-            <article class="info-card">
-                <div class="quiz-set-row align-start">
-                    <div>
-                        <h3>{{ exam.title }}</h3>
-                        <p>{{ exam.description or 'No description' }}</p>
-                        <p>{{ exam.question_count }} questions across {{ exam.set_count }} sets</p>
-                    </div>
-                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true" data-confirm="Delete this exam and its sets/questions? Users and payment data will stay untouched.">
-                        <input type="hidden" name="action" value="delete_exam">
-                        <input type="hidden" name="q" value="{{ search_query }}">
-                        <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
-                        <button class="button button-secondary" type="submit">Delete Exam</button>
-                    </form>
+        <div class="data-card" id="exam-flow" data-admin-panel tabindex="-1">
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Exam, set, and questions flow</h2>
+                    <p class="helper-text">All exams are shown here. Open an exam to manage sets, order, and full question lists.</p>
                 </div>
-                {% for set_item in exam.sets %}
-                <div class="catalog-card compact-card">
-                    <div class="quiz-set-row align-start">
-                        <div>
-                            <h4>{{ set_item.title }}</h4>
-                            <p>{{ set_item.description or 'No description' }}</p>
-                            <p>{{ set_item.question_count }} questions | {{ 'Premium' if set_item.is_premium_locked else 'Free' }}</p>
-                        </div>
-                        <div class="hero-actions admin-actions-row">
-                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
-                                <input type="hidden" name="action" value="toggle_set_lock">
-                                <input type="hidden" name="q" value="{{ search_query }}">
-                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
-                                <input type="hidden" name="lock_state" value="{{ 0 if set_item.is_premium_locked else 1 }}">
-                                <button class="button button-secondary" type="submit">{{ 'Make Free' if set_item.is_premium_locked else 'Make Premium' }}</button>
-                            </form>
-                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true" data-confirm="Delete this set and its questions? Users and payment data will stay untouched.">
-                                <input type="hidden" name="action" value="delete_set">
-                                <input type="hidden" name="q" value="{{ search_query }}">
-                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
-                                <button class="button button-secondary" type="submit">Delete Set</button>
-                            </form>
-                        </div>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr><th>ID</th><th>Question</th><th>Correct</th><th>Actions</th></tr>
-                        </thead>
-                        <tbody>
-                            {% for question in set_item.questions %}
-                            <tr>
-                                <td>{{ question.question_id }}</td>
-                                <td>{{ question.question_text }}</td>
-                                <td>{{ question.correct_option }}</td>
-                                <td>
-                                    <div class="table-actions">
-                                        <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query, edit_question_id=question.question_id, return_anchor='question-manager') }}#question-editor">Edit</a>
-                                        <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true" data-confirm="Delete this question only?">
-                                            <input type="hidden" name="action" value="delete_question">
-                                            <input type="hidden" name="q" value="{{ search_query }}">
-                                            <input type="hidden" name="question_id" value="{{ question.question_id }}">
-                                            <button class="button button-secondary" type="submit">Delete</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr><td colspan="4">No questions yet.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endfor %}
-            </article>
-            {% else %}
-            <p>No exams found.</p>
-            {% endfor %}
+                <a class="button button-primary" href="{{ url_for('admin.admin_exams') }}">Open Full Manager</a>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Exam</th><th>Sets</th><th>Questions</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                    {% for exam in exams %}
+                    <tr>
+                        <td>{{ exam.title }}</td>
+                        <td>{{ exam.set_count }}</td>
+                        <td>{{ exam.question_count }}</td>
+                        <td><a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=exam.exam_id) }}">Open Sets</a></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No exams found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </section>
@@ -298,74 +304,97 @@
 <section class="section">
     <div class="container admin-grid">
         <div class="data-card" id="payments-panel" data-admin-panel tabindex="-1">
-            <h2>Payments</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Payment logs</h2>
+                    <p class="helper-text">Latest first, 10 per page.</p>
+                </div>
+                <form class="compact-toolbar" method="get" accept-charset="UTF-8">
+                    <input type="date" name="logs_from" value="{{ filters.logs_from }}">
+                    <input type="date" name="logs_to" value="{{ filters.logs_to }}">
+                    <button class="button button-secondary" type="submit">Filter</button>
+                </form>
+            </div>
             <table>
-                <thead>
-                    <tr><th>Payment ID</th><th>Plan</th><th>Status</th><th>Amount</th></tr>
-                </thead>
+                <thead><tr><th>When</th><th>Payment ID</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead>
                 <tbody>
                     {% for payment in payments %}
                     <tr>
+                        <td>{{ payment.timestamp|format_user_datetime(current_user) }}</td>
                         <td>{{ payment.payment_id }}</td>
                         <td>{{ payment.plan_type }}</td>
                         <td>{{ payment.status }}</td>
                         <td>{{ payment.amount }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">No verified payments yet.</td></tr>
+                    <tr><td colspan="5">No payment logs yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
+                {% if payments_pagination.has_prev %}<button class="button button-secondary" name="payments_page" value="{{ payments_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in payments_pagination.pages %}<button class="button {% if page_number == payments_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="payments_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if payments_pagination.has_next %}<button class="button button-secondary" name="payments_page" value="{{ payments_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
         </div>
 
         <div class="data-card" id="orders-panel" data-admin-panel tabindex="-1">
             <h2>Orders</h2>
             <table>
-                <thead>
-                    <tr><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr>
-                </thead>
+                <thead><tr><th>When</th><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr></thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
+                        <td>{{ order.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ order.order_id }}</td>
                         <td>{{ order.user_id }}</td>
                         <td>{{ order.plan_type }}</td>
                         <td>{{ order.status }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">No orders yet.</td></tr>
+                    <tr><td colspan="5">No orders yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
+                {% if orders_pagination.has_prev %}<button class="button button-secondary" name="orders_page" value="{{ orders_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in orders_pagination.pages %}<button class="button {% if page_number == orders_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="orders_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if orders_pagination.has_next %}<button class="button button-secondary" name="orders_page" value="{{ orders_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
         </div>
 
         <div class="data-card" id="support-panel" data-admin-panel tabindex="-1">
-            <h2>Support Tickets</h2>
+            <h2>Support tickets</h2>
             <table>
-                <thead>
-                    <tr><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr>
-                </thead>
+                <thead><tr><th>When</th><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr></thead>
                 <tbody>
                     {% for ticket in support_tickets %}
                     <tr>
+                        <td>{{ ticket.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ ticket.support_id }}</td>
                         <td>{{ ticket.full_name }}</td>
                         <td>{{ ticket.status }}</td>
                         <td>{{ ticket.message }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">No support tickets yet.</td></tr>
+                    <tr><td colspan="5">No support tickets yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
+                {% if support_pagination.has_prev %}<button class="button button-secondary" name="support_page" value="{{ support_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in support_pagination.pages %}<button class="button {% if page_number == support_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="support_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if support_pagination.has_next %}<button class="button button-secondary" name="support_page" value="{{ support_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
         </div>
 
         <div class="data-card" id="question-reports-panel" data-admin-panel tabindex="-1">
-            <h2>Question Reports</h2>
+            <h2>Question reports / reviews</h2>
             <table>
-                <thead>
-                    <tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Question</th><th>Reason</th></tr>
-                </thead>
+                <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Question</th><th>Reason</th></tr></thead>
                 <tbody>
                     {% for report in question_reports %}
                     <tr>
@@ -381,6 +410,39 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
+                {% if reports_pagination.has_prev %}<button class="button button-secondary" name="reports_page" value="{{ reports_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in reports_pagination.pages %}<button class="button {% if page_number == reports_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="reports_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if reports_pagination.has_next %}<button class="button button-secondary" name="reports_page" value="{{ reports_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
+        </div>
+
+        <div class="data-card" id="user-logs-panel" data-admin-panel tabindex="-1">
+            <h2>User logs</h2>
+            <table>
+                <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Score</th><th>Ended</th></tr></thead>
+                <tbody>
+                    {% for item in user_logs %}
+                    <tr>
+                        <td>{{ item.created_at|format_user_datetime(current_user) }}</td>
+                        <td>{{ item.full_name or item.user_id }}</td>
+                        <td>{{ item.exam_title or '-' }}</td>
+                        <td>{{ item.set_title or '-' }}</td>
+                        <td>{{ item.correct_count }}/{{ item.requested_count }}</td>
+                        <td>{{ item.ended_reason }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">No user logs yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                <input type="hidden" name="logs_from" value="{{ filters.logs_from }}"><input type="hidden" name="logs_to" value="{{ filters.logs_to }}">
+                {% if user_logs_pagination.has_prev %}<button class="button button-secondary" name="user_logs_page" value="{{ user_logs_pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in user_logs_pagination.pages %}<button class="button {% if page_number == user_logs_pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="user_logs_page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if user_logs_pagination.has_next %}<button class="button button-secondary" name="user_logs_page" value="{{ user_logs_pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
         </div>
     </div>
 </section>

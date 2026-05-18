@@ -75,12 +75,13 @@ class ExamService:
                     s.title,
                     s.description,
                     s.is_premium_locked,
+                    s.position,
                     COUNT(q.question_id) AS question_count
                 FROM exam_sets s
                 LEFT JOIN questions q ON q.set_id = s.set_id
                 WHERE s.exam_id = ?
                 GROUP BY s.set_id
-                ORDER BY s.title
+                ORDER BY COALESCE(s.position, s.set_id), s.set_id
                 """,
                 (exam_id,),
             ).fetchall()
@@ -97,6 +98,7 @@ class ExamService:
                     s.title,
                     s.description,
                     s.is_premium_locked,
+                    s.position,
                     COUNT(q.question_id) AS question_count
                 FROM exam_sets s
                 LEFT JOIN questions q ON q.set_id = s.set_id
@@ -152,6 +154,13 @@ class ExamService:
         parsed = int(time_limit or DEFAULT_QUESTION_TIME)
         return parsed if parsed > 0 else DEFAULT_QUESTION_TIME
 
+    def _next_set_position(self, conn, exam_id: int) -> int:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(position), 0) AS max_position FROM exam_sets WHERE exam_id = ?",
+            (exam_id,),
+        ).fetchone()
+        return int(row["max_position"] or 0) + 1
+
     def add_exam(self, title: str, description: str | None = None):
         with database.connection() as conn:
             cursor = conn.execute(
@@ -174,9 +183,10 @@ class ExamService:
 
     def add_set(self, exam_id: int, title: str, description: str | None = None):
         with database.connection() as conn:
+            position = self._next_set_position(conn, exam_id)
             cursor = conn.execute(
-                "INSERT INTO exam_sets (exam_id, title, description, created_at) VALUES (?, ?, ?, ?)",
-                (exam_id, title.strip(), description, timestamp()),
+                "INSERT INTO exam_sets (exam_id, title, description, position, created_at) VALUES (?, ?, ?, ?, ?)",
+                (exam_id, title.strip(), description, position, timestamp()),
             )
             set_id = cursor.lastrowid
         self.invalidate_cache()
@@ -191,6 +201,24 @@ class ExamService:
         with database.connection() as conn:
             conn.execute("DELETE FROM exam_sets WHERE set_id = ?", (set_id,))
         self.invalidate_cache()
+
+    def update_set_position(self, set_id: int, position: int) -> dict | None:
+        normalized_position = max(int(position), 1)
+        with database.connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE exam_sets
+                SET position = ?
+                WHERE set_id = ?
+                """,
+                (normalized_position, set_id),
+            )
+
+        if cursor.rowcount <= 0:
+            return None
+
+        self.invalidate_cache()
+        return self.get_set(set_id)
 
     def set_set_premium_locked(self, set_id: int, is_locked: bool) -> dict | None:
         with database.connection() as conn:

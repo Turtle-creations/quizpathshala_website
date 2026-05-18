@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Sets Manager</span>
+        <h1>{{ exam.title }}</h1>
+        <p>{{ exam.description or 'Manage the set order and open any set to load all of its questions.' }}</p>
+        <div class="hero-actions">
+            <a class="button button-secondary" href="{{ url_for('admin.admin_exams') }}">Back to exams</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="form-card">
+            <h2>Add set</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="add_set">
+                <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
+                <input type="hidden" name="page" value="{{ pagination.page }}">
+                <label for="set_title">Set title</label>
+                <input id="set_title" name="title" type="text" placeholder="Set 1">
+                <label for="set_description">Description</label>
+                <textarea id="set_description" name="description" rows="3"></textarea>
+                <label><input type="checkbox" name="is_premium_locked" value="1"> Premium locked</label>
+                <button class="button button-primary" type="submit">Create Set</button>
+            </form>
+        </div>
+
+        <div class="data-card">
+            <h2>Sets</h2>
+            <table>
+                <thead><tr><th>Position</th><th>Set</th><th>Questions</th><th>Access</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for set_item in sets %}
+                    <tr>
+                        <td>
+                            <form class="compact-toolbar" method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                                <input type="hidden" name="action" value="update_set_position">
+                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                <input type="hidden" name="page" value="{{ pagination.page }}">
+                                <input name="position" type="number" min="1" value="{{ set_item.position or loop.index }}">
+                                <button class="button button-secondary" type="submit">Save</button>
+                            </form>
+                        </td>
+                        <td>
+                            <strong>{{ set_item.title }}</strong><br>
+                            <span class="helper-text">{{ set_item.description or 'No description' }}</span>
+                        </td>
+                        <td>{{ set_item.question_count }}</td>
+                        <td>{{ 'Premium' if set_item.is_premium_locked else 'Free' }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_set_questions', set_id=set_item.set_id) }}">Open Questions</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                                    <input type="hidden" name="action" value="toggle_set_lock">
+                                    <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                    <input type="hidden" name="lock_state" value="{{ 0 if set_item.is_premium_locked else 1 }}">
+                                    <input type="hidden" name="page" value="{{ pagination.page }}">
+                                    <button class="button button-secondary" type="submit">{{ 'Make Free' if set_item.is_premium_locked else 'Make Premium' }}</button>
+                                </form>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this set and all its questions?">
+                                    <input type="hidden" name="action" value="delete_set">
+                                    <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                    <input type="hidden" name="page" value="{{ pagination.page }}">
+                                    <button class="button button-secondary" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5">No sets found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form class="pagination-controls" method="get" accept-charset="UTF-8">
+                {% if pagination.has_prev %}<button class="button button-secondary" name="page" value="{{ pagination.prev_page }}" type="submit">&lt;</button>{% endif %}
+                {% for page_number in pagination.pages %}<button class="button {% if page_number == pagination.page %}button-primary{% else %}button-secondary{% endif %}" name="page" value="{{ page_number }}" type="submit">{{ page_number }}</button>{% endfor %}
+                {% if pagination.has_next %}<button class="button button-secondary" name="page" value="{{ pagination.next_page }}" type="submit">&gt;</button>{% endif %}
+            </form>
+        </div>
+    </div>
+</section>
+{% endblock %}

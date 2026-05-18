@@ -1311,3 +1311,55 @@ body.quiz-sidebar-open {
         max-width: none;
     }
 }
+
+
+.admin-panel-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.compact-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.compact-toolbar input[type="number"] {
+    width: 5.5rem;
+}
+
+.pagination-controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.admin-grid .data-card table td,
+.admin-grid .data-card table th,
+.narrow .data-card table td,
+.narrow .data-card table th {
+    vertical-align: top;
+}
+
+.helper-text {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .compact-toolbar,
+    .pagination-controls {
+        width: 100%;
+    }
+
+    .compact-toolbar input,
+    .compact-toolbar select,
+    .compact-toolbar button,
+    .pagination-controls button {
+        width: 100%;
+    }
+}

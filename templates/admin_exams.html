@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Exam Manager</span>
+        <h1>All exams</h1>
+        <p>Every exam is visible here with no pagination. Open any exam to manage sets and questions.</p>
+        <div class="hero-actions">
+            <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard') }}">Back to dashboard</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="form-card">
+            <h2>Add exam</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="add_exam">
+                <label for="exam_title">Exam title</label>
+                <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
+                <label for="exam_description">Description</label>
+                <textarea id="exam_description" name="description" rows="3"></textarea>
+                <button class="button button-primary" type="submit">Create Exam</button>
+            </form>
+        </div>
+
+        <div class="data-card">
+            <h2>All exams</h2>
+            <table>
+                <thead><tr><th>Exam</th><th>Sets</th><th>Questions</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for exam in exams %}
+                    <tr>
+                        <td>
+                            <strong>{{ exam.title }}</strong><br>
+                            <span class="helper-text">{{ exam.description or 'No description' }}</span>
+                        </td>
+                        <td>{{ exam.set_count }}</td>
+                        <td>{{ exam.question_count }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=exam.exam_id) }}">Open Sets</a>
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this exam and all its sets/questions?">
+                                    <input type="hidden" name="action" value="delete_exam">
+                                    <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
+                                    <button class="button button-secondary" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No exams found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

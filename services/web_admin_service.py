@@ -1,76 +1,102 @@
 import copy
-from decimal import Decimal
+import math
+import re
+from decimal import Decimal, InvalidOperation
 
 from flask import g, has_request_context
 
 from db.database import database
-from services.payment_service_db import SUBSCRIPTION_PLANS
 from services.exam_service_db import exam_service
+from services.payment_service_db import SUBSCRIPTION_PLANS
 from services.support_service_db import support_service
-from services.user_service_db import user_service
+from services.user_service_db import now_iso, user_service
 
 
 class WebAdminService:
     BULK_DELIMITER = "|"
     _DASHBOARD_CACHE_KEY = "_web_admin_dashboard_page_data"
+    _PLAN_PERIOD_ORDER = {"monthly": 1, "annual": 2}
 
     def dashboard_data(self) -> dict:
         data = self.dashboard_page_data()
-        data.pop("catalog", None)
         data.pop("editing_question", None)
+        data.pop("editing_plan", None)
         return data
 
-    def dashboard_page_data(self, *, search_text: str = "", edit_question_id: int | None = None) -> dict:
+    def dashboard_page_data(
+        self,
+        *,
+        search_text: str = "",
+        edit_question_id: int | None = None,
+        edit_plan_id: int | None = None,
+        users_page: int = 1,
+        payments_page: int = 1,
+        orders_page: int = 1,
+        support_page: int = 1,
+        reports_page: int = 1,
+        user_logs_page: int = 1,
+        users_from: str | None = None,
+        users_to: str | None = None,
+        logs_from: str | None = None,
+        logs_to: str | None = None,
+    ) -> dict:
         normalized_search = (search_text or "").strip().casefold()
-        cache_key = self._dashboard_cache_key(normalized_search, edit_question_id)
+        cache_key = self._dashboard_cache_key(
+            normalized_search,
+            edit_question_id,
+            edit_plan_id,
+            users_page,
+            payments_page,
+            orders_page,
+            support_page,
+            reports_page,
+            user_logs_page,
+            users_from,
+            users_to,
+            logs_from,
+            logs_to,
+        )
         cached_payload = self._get_cached_dashboard_page_data(cache_key)
         if cached_payload is not None:
             return copy.deepcopy(cached_payload)
 
         with database.connection() as conn:
-            users = [dict(row) for row in conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()]
-            payments = [dict(row) for row in conn.execute(
-                """
-                SELECT * FROM payments
-                ORDER BY timestamp DESC
-                LIMIT ?
-                """,
-                (50,),
-            ).fetchall()]
-            orders = [dict(row) for row in conn.execute(
-                """
-                SELECT * FROM payment_orders
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (50,),
-            ).fetchall()]
-            support_tickets = [dict(row) for row in conn.execute(
-                """
-                SELECT * FROM support_messages
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (50,),
-            ).fetchall()]
-            question_reports = [dict(row) for row in conn.execute(
-                """
-                SELECT
-                    qr.*,
-                    u.full_name,
-                    q.question_text,
-                    s.title AS set_title,
-                    e.title AS exam_title
-                FROM question_reports qr
-                LEFT JOIN users u ON u.user_id = qr.user_id
-                LEFT JOIN questions q ON q.question_id = qr.question_id
-                LEFT JOIN exam_sets s ON s.set_id = qr.set_id
-                LEFT JOIN exams e ON e.exam_id = s.exam_id
-                ORDER BY qr.created_at DESC, qr.report_id DESC
-                LIMIT ?
-                """,
-                (50,),
-            ).fetchall()]
+            users, users_pagination = self._list_users_page(
+                conn,
+                page=users_page,
+                date_from=users_from,
+                date_to=users_to,
+            )
+            payments, payments_pagination = self._list_payments_page(
+                conn,
+                page=payments_page,
+                date_from=logs_from,
+                date_to=logs_to,
+            )
+            orders, orders_pagination = self._list_orders_page(
+                conn,
+                page=orders_page,
+                date_from=logs_from,
+                date_to=logs_to,
+            )
+            support_tickets, support_pagination = self._list_support_page(
+                conn,
+                page=support_page,
+                date_from=logs_from,
+                date_to=logs_to,
+            )
+            question_reports, reports_pagination = self._list_reports_page(
+                conn,
+                page=reports_page,
+                date_from=logs_from,
+                date_to=logs_to,
+            )
+            user_logs, user_logs_pagination = self._list_user_logs_page(
+                conn,
+                page=user_logs_page,
+                date_from=logs_from,
+                date_to=logs_to,
+            )
             settings_rows = conn.execute(
                 """
                 SELECT key, value
@@ -83,81 +109,57 @@ class WebAdminService:
                     "premium_price:months_3",
                 ),
             ).fetchall()
-            exams = [dict(row) for row in conn.execute(
-                """
-                SELECT
-                    e.exam_id,
-                    e.title,
-                    e.description,
-                    COUNT(DISTINCT s.set_id) AS set_count,
-                    COUNT(q.question_id) AS question_count
-                FROM exams e
-                LEFT JOIN exam_sets s ON s.exam_id = e.exam_id
-                LEFT JOIN questions q ON q.set_id = s.set_id
-                GROUP BY e.exam_id
-                ORDER BY e.title
-                """
-            ).fetchall()]
-            set_rows = [dict(row) for row in conn.execute(
-                """
-                SELECT
-                    s.set_id,
-                    s.exam_id,
-                    s.title,
-                    s.description,
-                    s.is_premium_locked,
-                    COUNT(q.question_id) AS question_count
-                FROM exam_sets s
-                LEFT JOIN questions q ON q.set_id = s.set_id
-                GROUP BY s.set_id
-                ORDER BY s.exam_id, s.title
-                """
-            ).fetchall()]
-            question_rows = [dict(row) for row in conn.execute(
-                """
-                SELECT
-                    q.*,
-                    e.title AS exam_title,
-                    s.title AS set_title
-                FROM questions q
-                JOIN exams e ON e.exam_id = q.exam_id
-                JOIN exam_sets s ON s.set_id = q.set_id
-                ORDER BY q.set_id, q.question_id DESC
-                """
-            ).fetchall()]
+            total_users = int(conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"] or 0)
+            premium_users = int(
+                conn.execute("SELECT COUNT(*) AS count FROM users WHERE is_premium = 1").fetchone()["count"] or 0
+            )
+            admin_users = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS count FROM users WHERE is_admin = 1 OR user_role IN ('admin', 'super_admin')"
+                ).fetchone()["count"] or 0
+            )
 
-        admins = [user for user in users if user.get("user_role") in {"admin", "super_admin"} or user.get("is_admin")]
-        non_admins = [user for user in users if user not in admins]
+        exams = self.list_exams_overview()
         premium_prices = self._premium_prices_from_settings(settings_rows)
-        catalog, set_choices, question_search_results, editing_question = self._build_question_views(
-            exams=exams,
-            set_rows=set_rows,
-            question_rows=question_rows,
-            normalized_search=normalized_search,
-            edit_question_id=edit_question_id,
-        )
+        plans = self.list_admin_plans()
+        set_choices = self.list_set_choices()
+        question_search_results = self.search_questions(search_text, limit=25) if normalized_search else []
+        editing_question = self.get_question(edit_question_id) if edit_question_id else None
+        editing_plan = self.get_admin_plan(edit_plan_id) if edit_plan_id else None
 
         payload = {
             "users": users,
+            "users_pagination": users_pagination,
             "payments": payments,
+            "payments_pagination": payments_pagination,
             "orders": orders,
-            "premium_prices": premium_prices,
+            "orders_pagination": orders_pagination,
             "support_tickets": support_tickets,
+            "support_pagination": support_pagination,
             "question_reports": question_reports,
-            "admins": admins,
-            "non_admins": non_admins,
+            "reports_pagination": reports_pagination,
+            "user_logs": user_logs,
+            "user_logs_pagination": user_logs_pagination,
+            "premium_prices": premium_prices,
+            "plans": plans,
+            "editing_plan": editing_plan,
             "exams": exams,
             "set_choices": set_choices,
-            "catalog": catalog,
             "question_search_results": question_search_results,
             "editing_question": editing_question,
             "dashboard_counts": {
-                "total_users": len(users),
-                "premium_users": sum(1 for user in users if user.get("is_premium")),
-                "admin_users": len(admins),
+                "total_users": total_users,
+                "premium_users": premium_users,
+                "admin_users": admin_users,
                 "exam_count": len(exams),
                 "question_count": sum(int(exam.get("question_count") or 0) for exam in exams),
-                "payment_count": len(payments),
+                "payment_count": payments_pagination["total_items"],
+            },
+            "filters": {
+                "users_from": (users_from or "").strip(),
+                "users_to": (users_to or "").strip(),
+                "logs_from": (logs_from or "").strip(),
+                "logs_to": (logs_to or "").strip(),
             },
         }
         self._set_cached_dashboard_page_data(cache_key, payload)
@@ -168,7 +170,7 @@ class WebAdminService:
             rows = conn.execute(
                 """
                 SELECT * FROM support_messages
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, support_id DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -195,12 +197,23 @@ class WebAdminService:
                 )
         return choices
 
-    def catalog_for_admin(self) -> list[dict]:
-        exams = exam_service.get_exams()
-        exam_map = {exam["exam_id"]: {**exam, "sets": []} for exam in exams}
+    def list_exams_overview(self) -> list[dict]:
+        return exam_service.get_exams()
 
+    def get_exam_overview(self, exam_id: int) -> dict | None:
+        return exam_service.get_exam(exam_id)
+
+    def list_sets_for_exam(self, exam_id: int, page: int = 1, per_page: int = 10) -> tuple[dict | None, list[dict], dict]:
+        exam = exam_service.get_exam(exam_id)
+        if not exam:
+            return None, [], self._empty_pagination(per_page)
+        all_sets = exam_service.get_sets(exam_id)
+        paginated_sets, pagination = self._paginate_list(all_sets, page=page, per_page=per_page)
+        return exam, paginated_sets, pagination
+
+    def get_set_overview(self, set_id: int) -> dict | None:
         with database.connection() as conn:
-            set_rows = conn.execute(
+            row = conn.execute(
                 """
                 SELECT
                     s.set_id,
@@ -208,52 +221,36 @@ class WebAdminService:
                     s.title,
                     s.description,
                     s.is_premium_locked,
-                    COUNT(q.question_id) AS question_count
+                    s.position,
+                    COUNT(q.question_id) AS question_count,
+                    e.title AS exam_title,
+                    e.description AS exam_description
                 FROM exam_sets s
+                JOIN exams e ON e.exam_id = s.exam_id
                 LEFT JOIN questions q ON q.set_id = s.set_id
+                WHERE s.set_id = ?
                 GROUP BY s.set_id
-                ORDER BY s.exam_id, s.title
-                """
-            ).fetchall()
-            question_rows = conn.execute(
-                """
-                SELECT
-                    q.*, e.title AS exam_title, s.title AS set_title
-                FROM questions q
-                JOIN exams e ON e.exam_id = q.exam_id
-                JOIN exam_sets s ON s.set_id = q.set_id
-                ORDER BY set_id, question_id DESC
-                """
-            ).fetchall()
-
-        questions_by_set: dict[int, list[dict]] = {}
-        for row in question_rows:
-            set_id = int(row["set_id"])
-            bucket = questions_by_set.setdefault(set_id, [])
-            if len(bucket) >= 25:
-                continue
-            bucket.append(exam_service._serialize_question_row(dict(row)))
-
-        for row in set_rows:
-            set_item = dict(row)
-            set_item["questions"] = questions_by_set.get(int(set_item["set_id"]), [])
-            exam_entry = exam_map.get(int(set_item["exam_id"]))
-            if exam_entry is not None:
-                exam_entry["sets"].append(set_item)
-
-        return list(exam_map.values())
-
-    def list_questions_for_set(self, set_id: int, limit: int = 100) -> list[dict]:
-        with database.connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM questions
-                WHERE set_id = ?
-                ORDER BY question_id DESC
-                LIMIT ?
                 """,
-                (set_id, limit),
-            ).fetchall()
+                (set_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_questions_for_set(self, set_id: int, limit: int | None = None) -> list[dict]:
+        query = """
+            SELECT
+                q.*, e.title AS exam_title, s.title AS set_title
+            FROM questions q
+            JOIN exams e ON e.exam_id = q.exam_id
+            JOIN exam_sets s ON s.set_id = q.set_id
+            WHERE q.set_id = ?
+            ORDER BY q.question_id DESC
+        """
+        params: list[int] = [set_id]
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with database.connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
         return [exam_service._serialize_question_row(dict(row)) for row in rows]
 
     def add_exam(self, title: str, description: str | None = None) -> dict:
@@ -263,6 +260,9 @@ class WebAdminService:
         result = exam_service.add_set(exam_id, title, description)
         exam_service.set_set_premium_locked(result["row_id"], is_premium_locked)
         return {"row_id": result["row_id"], "record": exam_service.get_set(result["row_id"])}
+
+    def update_set_position(self, set_id: int, position: int) -> dict | None:
+        return exam_service.update_set_position(set_id, position)
 
     def add_question(
         self,
@@ -366,6 +366,124 @@ class WebAdminService:
             return user, "updated" if user else "not_found"
         raise ValueError("Unsupported role change. Only admin and user can be assigned from the web panel.")
 
+    def list_admin_plans(self) -> list[dict]:
+        with database.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM premium_plans ORDER BY billing_period, created_at DESC, plan_id DESC"
+            ).fetchall()
+        items = [self._serialize_plan_row(dict(row)) for row in rows]
+        return sorted(items, key=lambda item: (self._PLAN_PERIOD_ORDER.get(item["billing_period"], 99), -int(item["plan_id"])))
+
+    def get_admin_plan(self, plan_id: int | None) -> dict | None:
+        if not plan_id:
+            return None
+        with database.connection() as conn:
+            row = conn.execute("SELECT * FROM premium_plans WHERE plan_id = ?", (plan_id,)).fetchone()
+        return self._serialize_plan_row(dict(row)) if row else None
+
+    def save_admin_plan(
+        self,
+        *,
+        plan_id: int | None,
+        name: str,
+        price_text: str,
+        duration_days: str | int,
+        benefits: str | None,
+        billing_period: str,
+        is_active: bool,
+    ) -> dict:
+        cleaned_name = " ".join(str(name or "").split())
+        if not cleaned_name:
+            raise ValueError("Plan name is required.")
+
+        normalized_period = (billing_period or "").strip().lower()
+        if normalized_period not in {"monthly", "annual"}:
+            raise ValueError("Billing period must be monthly or annual.")
+
+        try:
+            amount_rupees = Decimal((price_text or "").strip())
+        except InvalidOperation as exc:
+            raise ValueError("Plan price must be numeric.") from exc
+        if amount_rupees < Decimal("1"):
+            raise ValueError("Plan price must be at least 1 INR.")
+
+        try:
+            duration_value = int(duration_days)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Duration must be a whole number of days.") from exc
+        if duration_value <= 0:
+            raise ValueError("Duration must be greater than 0 days.")
+
+        amount_paise = int((amount_rupees * Decimal("100")).quantize(Decimal("1")))
+        cleaned_benefits = (benefits or "").strip() or None
+        timestamp_value = now_iso()
+
+        with database.connection() as conn:
+            existing = None
+            if plan_id:
+                existing = conn.execute("SELECT * FROM premium_plans WHERE plan_id = ?", (plan_id,)).fetchone()
+                if not existing:
+                    raise ValueError("Plan not found.")
+            plan_key = self._build_plan_key(cleaned_name, normalized_period, plan_id=plan_id)
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE premium_plans
+                    SET plan_key = ?,
+                        name = ?,
+                        price = ?,
+                        duration_days = ?,
+                        billing_period = ?,
+                        benefits = ?,
+                        is_active = ?,
+                        updated_at = ?
+                    WHERE plan_id = ?
+                    """,
+                    (
+                        plan_key,
+                        cleaned_name,
+                        amount_paise,
+                        duration_value,
+                        normalized_period,
+                        cleaned_benefits,
+                        1 if is_active else 0,
+                        timestamp_value,
+                        plan_id,
+                    ),
+                )
+                target_plan_id = int(plan_id)
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO premium_plans (
+                        plan_key, name, price, duration_days, billing_period, benefits, is_active, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        plan_key,
+                        cleaned_name,
+                        amount_paise,
+                        duration_value,
+                        normalized_period,
+                        cleaned_benefits,
+                        1 if is_active else 0,
+                        timestamp_value,
+                        timestamp_value,
+                    ),
+                )
+                target_plan_id = int(cursor.lastrowid)
+        return self.get_admin_plan(target_plan_id) or {}
+
+    def set_plan_active(self, plan_id: int, is_active: bool) -> dict | None:
+        with database.connection() as conn:
+            cursor = conn.execute(
+                "UPDATE premium_plans SET is_active = ?, updated_at = ? WHERE plan_id = ?",
+                (1 if is_active else 0, now_iso(), plan_id),
+            )
+        if cursor.rowcount <= 0:
+            return None
+        return self.get_admin_plan(plan_id)
+
     def _premium_prices_from_settings(self, settings_rows: list[dict]) -> list[dict]:
         stored_values = {str(row["key"]): str(row["value"]) for row in settings_rows}
         items = []
@@ -385,76 +503,186 @@ class WebAdminService:
             )
         return items
 
-    def _build_question_views(
-        self,
-        *,
-        exams: list[dict],
-        set_rows: list[dict],
-        question_rows: list[dict],
-        normalized_search: str,
-        edit_question_id: int | None,
-    ) -> tuple[list[dict], list[dict], list[dict], dict | None]:
-        exam_map = {int(exam["exam_id"]): {**exam, "sets": []} for exam in exams}
-        set_choices: list[dict] = []
-        questions_by_set: dict[int, list[dict]] = {}
-        question_by_id: dict[int, dict] = {}
-        question_search_results: list[dict] = []
+    def _serialize_plan_row(self, row: dict) -> dict:
+        item = dict(row)
+        item["plan_id"] = int(item["plan_id"])
+        item["price"] = int(item["price"])
+        item["duration_days"] = int(item["duration_days"])
+        item["is_active"] = bool(int(item.get("is_active") or 0))
+        item["price_rupees"] = Decimal(item["price"]) / Decimal("100")
+        item["benefits_lines"] = [line.strip() for line in str(item.get("benefits") or "").splitlines() if line.strip()]
+        return item
 
-        for row in question_rows:
-            serialized = exam_service._serialize_question_row(row)
-            question_id = int(serialized["question_id"])
-            set_id = int(serialized["set_id"])
-            question_by_id[question_id] = serialized
+    def _build_plan_key(self, name: str, billing_period: str, plan_id: int | None = None) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-") or "plan"
+        base_key = f"{billing_period}-{slug}"
+        with database.connection() as conn:
+            candidate = base_key
+            suffix = 2
+            while True:
+                row = conn.execute(
+                    "SELECT plan_id FROM premium_plans WHERE plan_key = ?",
+                    (candidate,),
+                ).fetchone()
+                if not row or (plan_id and int(row["plan_id"]) == int(plan_id)):
+                    return candidate
+                candidate = f"{base_key}-{suffix}"
+                suffix += 1
 
-            bucket = questions_by_set.setdefault(set_id, [])
-            if len(bucket) < 25:
-                bucket.append(serialized)
-
-            if normalized_search and normalized_search in str(serialized.get("question_text") or "").casefold():
-                question_search_results.append(
-                    {
-                        "question_id": question_id,
-                        "exam_id": int(serialized["exam_id"]),
-                        "set_id": set_id,
-                        "question_text": serialized.get("question_text"),
-                        "correct_option": serialized.get("correct_option"),
-                        "explanation": serialized.get("explanation"),
-                        "image_path": serialized.get("image_path"),
-                        "time_limit": serialized.get("time_limit"),
-                        "set_title": serialized.get("set_title"),
-                        "exam_title": serialized.get("exam_title"),
-                    }
-                )
-
-        for row in set_rows:
-            set_id = int(row["set_id"])
-            exam_id = int(row["exam_id"])
-            set_item = dict(row)
-            set_item["questions"] = questions_by_set.get(set_id, [])
-            set_choices.append(
-                {
-                    "exam_id": exam_id,
-                    "exam_title": exam_map.get(exam_id, {}).get("title", ""),
-                    "set_id": set_id,
-                    "set_title": set_item["title"],
-                    "label": f"{exam_map.get(exam_id, {}).get('title', '')} - {set_item['title']}",
-                    "is_premium_locked": bool(int(set_item.get("is_premium_locked", 0))),
-                    "question_count": int(set_item.get("question_count") or 0),
-                }
-            )
-            exam_entry = exam_map.get(exam_id)
-            if exam_entry is not None:
-                exam_entry["sets"].append(set_item)
-
-        return (
-            list(exam_map.values()),
-            set_choices,
-            question_search_results[:25],
-            question_by_id.get(int(edit_question_id)) if edit_question_id else None,
+    def _list_users_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("created_at", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"SELECT * FROM users {where_sql} ORDER BY created_at DESC, user_id DESC",
+            count_sql=f"SELECT COUNT(*) AS count FROM users {where_sql}",
+            params=params,
+            page=page,
         )
 
-    def _dashboard_cache_key(self, normalized_search: str, edit_question_id: int | None) -> tuple[str, int | None]:
-        return (normalized_search, int(edit_question_id) if edit_question_id else None)
+    def _list_payments_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("timestamp", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"SELECT * FROM payments {where_sql} ORDER BY timestamp DESC, payment_id DESC",
+            count_sql=f"SELECT COUNT(*) AS count FROM payments {where_sql}",
+            params=params,
+            page=page,
+        )
+
+    def _list_orders_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("created_at", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"SELECT * FROM payment_orders {where_sql} ORDER BY created_at DESC, order_id DESC",
+            count_sql=f"SELECT COUNT(*) AS count FROM payment_orders {where_sql}",
+            params=params,
+            page=page,
+        )
+
+    def _list_support_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("created_at", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"SELECT * FROM support_messages {where_sql} ORDER BY created_at DESC, support_id DESC",
+            count_sql=f"SELECT COUNT(*) AS count FROM support_messages {where_sql}",
+            params=params,
+            page=page,
+        )
+
+    def _list_reports_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("qr.created_at", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"""
+                SELECT
+                    qr.*,
+                    u.full_name,
+                    q.question_text,
+                    s.title AS set_title,
+                    e.title AS exam_title
+                FROM question_reports qr
+                LEFT JOIN users u ON u.user_id = qr.user_id
+                LEFT JOIN questions q ON q.question_id = qr.question_id
+                LEFT JOIN exam_sets s ON s.set_id = qr.set_id
+                LEFT JOIN exams e ON e.exam_id = s.exam_id
+                {where_sql}
+                ORDER BY qr.created_at DESC, qr.report_id DESC
+            """,
+            count_sql=f"SELECT COUNT(*) AS count FROM question_reports qr {where_sql}",
+            params=params,
+            page=page,
+        )
+
+    def _list_user_logs_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
+        where_sql, params = self._date_filter_sql("qa.created_at", date_from, date_to)
+        return self._fetch_page(
+            conn,
+            select_sql=f"""
+                SELECT
+                    qa.attempt_id,
+                    qa.user_id,
+                    qa.created_at,
+                    qa.requested_count,
+                    qa.correct_count,
+                    qa.wrong_count,
+                    qa.skipped_count,
+                    qa.ended_reason,
+                    u.full_name,
+                    s.title AS set_title,
+                    e.title AS exam_title
+                FROM quiz_attempts qa
+                LEFT JOIN users u ON u.user_id = qa.user_id
+                LEFT JOIN exam_sets s ON s.set_id = qa.set_id
+                LEFT JOIN exams e ON e.exam_id = s.exam_id
+                {where_sql}
+                ORDER BY qa.created_at DESC, qa.attempt_id DESC
+            """,
+            count_sql=f"SELECT COUNT(*) AS count FROM quiz_attempts qa {where_sql}",
+            params=params,
+            page=page,
+        )
+
+    def _date_filter_sql(self, column_name: str, date_from: str | None, date_to: str | None) -> tuple[str, tuple[str, ...]]:
+        clauses: list[str] = []
+        params: list[str] = []
+        if (date_from or "").strip():
+            clauses.append(f"{column_name} >= ?")
+            params.append(f"{date_from.strip()}T00:00:00")
+        if (date_to or "").strip():
+            clauses.append(f"{column_name} <= ?")
+            params.append(f"{date_to.strip()}T23:59:59")
+        if not clauses:
+            return "", tuple()
+        return "WHERE " + " AND ".join(clauses), tuple(params)
+
+    def _fetch_page(self, conn, *, select_sql: str, count_sql: str, params: tuple | list, page: int, per_page: int = 10) -> tuple[list[dict], dict]:
+        normalized_page = self._coerce_page(page)
+        total_items = int(conn.execute(count_sql, tuple(params)).fetchone()["count"] or 0)
+        total_pages = max(math.ceil(total_items / per_page), 1) if total_items else 1
+        if normalized_page > total_pages:
+            normalized_page = total_pages
+        offset = (normalized_page - 1) * per_page
+        rows = conn.execute(f"{select_sql} LIMIT ? OFFSET ?", tuple(params) + (per_page, offset)).fetchall()
+        return [dict(row) for row in rows], self._build_pagination(total_items, normalized_page, per_page)
+
+    def _paginate_list(self, items: list[dict], *, page: int, per_page: int = 10) -> tuple[list[dict], dict]:
+        pagination = self._build_pagination(len(items), self._coerce_page(page), per_page)
+        start = (pagination["page"] - 1) * per_page
+        end = start + per_page
+        return items[start:end], pagination
+
+    def _build_pagination(self, total_items: int, page: int, per_page: int) -> dict:
+        total_pages = max(math.ceil(total_items / per_page), 1) if total_items else 1
+        normalized_page = min(max(page, 1), total_pages)
+        start_page = max(1, normalized_page - 2)
+        end_page = min(total_pages, normalized_page + 2)
+        if end_page - start_page < 4:
+            start_page = max(1, end_page - 4)
+            end_page = min(total_pages, start_page + 4)
+        return {
+            "page": normalized_page,
+            "per_page": per_page,
+            "total_items": total_items,
+            "total_pages": total_pages,
+            "pages": list(range(start_page, end_page + 1)),
+            "has_prev": normalized_page > 1,
+            "has_next": normalized_page < total_pages,
+            "prev_page": normalized_page - 1,
+            "next_page": normalized_page + 1,
+        }
+
+    def _empty_pagination(self, per_page: int) -> dict:
+        return self._build_pagination(0, 1, per_page)
+
+    def _coerce_page(self, value) -> int:
+        try:
+            page = int(value)
+        except (TypeError, ValueError):
+            return 1
+        return max(page, 1)
+
+    def _dashboard_cache_key(self, *parts):
+        return tuple(parts)
 
     def _get_cached_dashboard_page_data(self, cache_key):
         if not has_request_context():
