@@ -1,6 +1,7 @@
 import re
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 from config import DATABASE_BACKEND, DATABASE_DSN, DATABASE_HOST, DATABASE_PORT, DATA_DIR, POSTGRES_CONFIG
 from utils.logging_utils import get_logger
@@ -141,6 +142,36 @@ class Database:
             else:
                 self._initialize_postgres(conn)
 
+            self._ensure_column(conn, "users", "login_identifier", "TEXT")
+            self._ensure_column(conn, "users", "email", "TEXT")
+            self._ensure_column(conn, "users", "phone_number", "TEXT")
+            self._ensure_column(conn, "users", "password_hash", "TEXT")
+            self._ensure_column(conn, "users", "user_role", "TEXT NOT NULL DEFAULT 'user'")
+            self._ensure_column(conn, "users", "is_premium", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "premium_expires_at", "TEXT")
+            self._ensure_column(conn, "users", "daily_question_date", "TEXT")
+            self._ensure_column(conn, "users", "daily_question_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "pdf_generation_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "quiz_played", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "correct_answers", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "wrong_answers", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "score", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "users", "updated_at", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "exam_sets", "is_premium_locked", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "exam_sets", "position", "INTEGER")
+            self._ensure_column(conn, "support_messages", "admin_chat_id", "INTEGER")
+            self._ensure_column(conn, "support_messages", "admin_message_id", "INTEGER")
+            self._ensure_column(conn, "processed_webhooks", "payment_id", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "order_id", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "last_seen_at", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "duplicate_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "password_reset_requests", "requested_ip", "TEXT")
+            self._ensure_column(conn, "password_reset_requests", "otp_verified_at", "TEXT")
+            self._ensure_column(conn, "password_reset_requests", "used_at", "TEXT")
+            self._ensure_column(conn, "password_reset_requests", "reset_token_hash", "TEXT")
+            self._ensure_column(conn, "password_reset_requests", "reset_expires_at", "TEXT")
+            self._ensure_column(conn, "password_reset_requests", "password_reset_at", "TEXT")
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS premium_plans (
@@ -224,12 +255,7 @@ class Database:
     @contextmanager
     def connection(self):
         if self.is_sqlite:
-            conn = sqlite3.connect(self.dsn, timeout=30)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA temp_store=MEMORY")
+            conn = self._open_sqlite_connection()
         else:
             from psycopg import connect
             from psycopg.rows import dict_row
@@ -324,9 +350,53 @@ class Database:
             return False
         return str(details["data_type"]).lower() in {"integer", "bigint"} and str(details["is_identity"]).upper() == "YES"
 
+    def _sqlite_connection_candidates(self) -> list[str]:
+        configured = str(self.dsn)
+        fallback = str((DATA_DIR / "quiz_bot_v2.db").resolve())
+        candidates: list[str] = []
+        for candidate in (configured, fallback):
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+    def _open_sqlite_connection(self):
+        last_error = None
+        for candidate in self._sqlite_connection_candidates():
+            try:
+                Path(candidate).parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(candidate, timeout=30)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.execute("PRAGMA busy_timeout=30000")
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA temp_store=MEMORY")
+                if str(candidate) != str(self.dsn):
+                    logger.warning("SQLite fallback activated | configured_dsn=%s fallback_dsn=%s", self.dsn, candidate)
+                    self.dsn = str(candidate)
+                return conn
+            except sqlite3.OperationalError as exc:
+                last_error = exc
+                logger.warning("SQLite open failed | dsn=%s error=%s", candidate, exc)
+        if last_error is not None:
+            raise last_error
+        raise sqlite3.OperationalError("unable to open database file")
+
     def _ensure_column(self, conn, table_name: str, column_name: str, definition: str):
-        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
-        if column_name not in columns:
+        if self.is_sqlite:
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+            if column_name not in columns:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+            return
+
+        row = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ? AND column_name = ?
+            """,
+            (table_name, column_name),
+        ).fetchone()
+        if not row:
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
     def _initialize_postgres(self, conn):
