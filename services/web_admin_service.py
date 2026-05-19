@@ -229,7 +229,15 @@ class WebAdminService:
                 JOIN exams e ON e.exam_id = s.exam_id
                 LEFT JOIN questions q ON q.set_id = s.set_id
                 WHERE s.set_id = ?
-                GROUP BY s.set_id
+                GROUP BY
+                    s.set_id,
+                    s.exam_id,
+                    s.title,
+                    s.description,
+                    s.is_premium_locked,
+                    s.position,
+                    e.title,
+                    e.description
                 """,
                 (set_id,),
             ).fetchone()
