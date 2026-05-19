@@ -768,6 +768,27 @@ def admin_dashboard():
     )
 
 
+@admin_blueprint.route("/admin/users/<int:user_id>", methods=["GET"])
+@admin_required
+def admin_user_detail(user_id: int):
+    current_user = web_identity_service.get_authenticated_user_snapshot()
+    detail = web_admin_service.get_user_detail(user_id)
+    if not detail:
+        flash("User not found.", "error")
+        return redirect(url_for("admin.admin_dashboard", return_anchor="users-section"))
+
+    return render_template(
+        "admin_user_detail.html",
+        page_title="User Details",
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=True,
+        current_user=current_user,
+        user_detail=detail["user"],
+        activity_summary=detail["activity_summary"],
+        recent_attempts=detail["recent_attempts"],
+    )
+
+
 @admin_blueprint.route("/admin/exams", methods=["GET", "POST"])
 @admin_required
 def admin_exams():

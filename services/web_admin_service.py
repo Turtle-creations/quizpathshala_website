@@ -357,6 +357,109 @@ class WebAdminService:
     def get_question(self, question_id: int) -> dict | None:
         return exam_service.get_question(question_id)
 
+    def get_user_detail(self, user_id: int) -> dict | None:
+        user = user_service.get_user(user_id)
+        if not user:
+            return None
+
+        with database.connection() as conn:
+            attempts_summary = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_attempts,
+                    COALESCE(SUM(correct_count), 0) AS total_correct,
+                    COALESCE(SUM(wrong_count), 0) AS total_wrong,
+                    COALESCE(SUM(skipped_count), 0) AS total_skipped,
+                    MAX(created_at) AS last_attempt_at
+                FROM quiz_attempts
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            payments_summary = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS payment_count,
+                    COALESCE(SUM(amount), 0) AS total_paid,
+                    MAX(timestamp) AS last_payment_at
+                FROM payments
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            orders_summary = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS order_count,
+                    MAX(created_at) AS last_order_at
+                FROM payment_orders
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            reports_summary = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS report_count,
+                    MAX(created_at) AS last_report_at
+                FROM question_reports
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            tickets_summary = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS ticket_count,
+                    MAX(created_at) AS last_ticket_at
+                FROM support_messages
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            recent_attempts = conn.execute(
+                """
+                SELECT
+                    qa.attempt_id,
+                    qa.created_at,
+                    qa.requested_count,
+                    qa.correct_count,
+                    qa.wrong_count,
+                    qa.skipped_count,
+                    qa.ended_reason,
+                    s.title AS set_title,
+                    e.title AS exam_title
+                FROM quiz_attempts qa
+                LEFT JOIN exam_sets s ON s.set_id = qa.set_id
+                LEFT JOIN exams e ON e.exam_id = s.exam_id
+                WHERE qa.user_id = ?
+                ORDER BY qa.created_at DESC, qa.attempt_id DESC
+                LIMIT 10
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return {
+            "user": user,
+            "activity_summary": {
+                "total_attempts": int(attempts_summary["total_attempts"] or 0),
+                "total_correct": int(attempts_summary["total_correct"] or 0),
+                "total_wrong": int(attempts_summary["total_wrong"] or 0),
+                "total_skipped": int(attempts_summary["total_skipped"] or 0),
+                "last_attempt_at": attempts_summary["last_attempt_at"],
+                "payment_count": int(payments_summary["payment_count"] or 0),
+                "total_paid_paise": int(payments_summary["total_paid"] or 0),
+                "last_payment_at": payments_summary["last_payment_at"],
+                "order_count": int(orders_summary["order_count"] or 0),
+                "last_order_at": orders_summary["last_order_at"],
+                "report_count": int(reports_summary["report_count"] or 0),
+                "last_report_at": reports_summary["last_report_at"],
+                "ticket_count": int(tickets_summary["ticket_count"] or 0),
+                "last_ticket_at": tickets_summary["last_ticket_at"],
+            },
+            "recent_attempts": [dict(row) for row in recent_attempts],
+        }
+
     def change_user_role(self, target_user_id: int, role: str) -> tuple[dict | None, str]:
         normalized_role = (role or "").strip().lower()
         if normalized_role == "admin":
@@ -550,21 +653,39 @@ class WebAdminService:
         )
 
     def _list_orders_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
-        where_sql, params = self._date_filter_sql("created_at", date_from, date_to)
+        where_sql, params = self._date_filter_sql("po.created_at", date_from, date_to)
         return self._fetch_page(
             conn,
-            select_sql=f"SELECT * FROM payment_orders {where_sql} ORDER BY created_at DESC, order_id DESC",
-            count_sql=f"SELECT COUNT(*) AS count FROM payment_orders {where_sql}",
+            select_sql=f"""
+                SELECT
+                    po.*,
+                    u.full_name,
+                    u.email
+                FROM payment_orders po
+                LEFT JOIN users u ON u.user_id = po.user_id
+                {where_sql}
+                ORDER BY po.created_at DESC, po.order_id DESC
+            """,
+            count_sql=f"SELECT COUNT(*) AS count FROM payment_orders po {where_sql}",
             params=params,
             page=page,
         )
 
     def _list_support_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
-        where_sql, params = self._date_filter_sql("created_at", date_from, date_to)
+        where_sql, params = self._date_filter_sql("sm.created_at", date_from, date_to)
         return self._fetch_page(
             conn,
-            select_sql=f"SELECT * FROM support_messages {where_sql} ORDER BY created_at DESC, support_id DESC",
-            count_sql=f"SELECT COUNT(*) AS count FROM support_messages {where_sql}",
+            select_sql=f"""
+                SELECT
+                    sm.*,
+                    u.full_name AS account_full_name,
+                    u.email
+                FROM support_messages sm
+                LEFT JOIN users u ON u.user_id = sm.user_id
+                {where_sql}
+                ORDER BY sm.created_at DESC, sm.support_id DESC
+            """,
+            count_sql=f"SELECT COUNT(*) AS count FROM support_messages sm {where_sql}",
             params=params,
             page=page,
         )

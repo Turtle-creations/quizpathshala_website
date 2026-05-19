@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">User Details</span>
+        <h1>{{ user_detail.full_name }}</h1>
+        <p>Review account details, joined date, and a lightweight activity summary without leaving the admin panel.</p>
+        <div class="hero-actions">
+            <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard') }}#users-section">Back to dashboard</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container card-grid score-grid">
+        <article class="info-card"><h3>Name</h3><p>{{ user_detail.full_name }}</p></article>
+        <article class="info-card"><h3>Email</h3><p>{{ user_detail.email or '-' }}</p></article>
+        <article class="info-card"><h3>Joined</h3><p>{{ user_detail.created_at|format_user_datetime(current_user) }}</p></article>
+        <article class="info-card"><h3>Role</h3><p>{{ user_detail.user_role }}</p></article>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container card-grid score-grid">
+        <article class="info-card"><h3>Total attempts</h3><p class="stat">{{ activity_summary.total_attempts }}</p></article>
+        <article class="info-card"><h3>Correct / Wrong</h3><p class="stat">{{ activity_summary.total_correct }} / {{ activity_summary.total_wrong }}</p></article>
+        <article class="info-card"><h3>Orders / Payments</h3><p class="stat">{{ activity_summary.order_count }} / {{ activity_summary.payment_count }}</p></article>
+        <article class="info-card"><h3>Reports / Tickets</h3><p class="stat">{{ activity_summary.report_count }} / {{ activity_summary.ticket_count }}</p></article>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="data-card">
+            <h2>Activity summary</h2>
+            <table>
+                <tbody>
+                    <tr><th>Premium</th><td>{{ 'Yes' if user_detail.is_premium else 'No' }}</td></tr>
+                    <tr><th>Premium expires</th><td>{% if user_detail.premium_expires_at %}{{ user_detail.premium_expires_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
+                    <tr><th>Total paid</th><td>INR {{ '%.2f'|format(activity_summary.total_paid_paise / 100) }}</td></tr>
+                    <tr><th>Last attempt</th><td>{% if activity_summary.last_attempt_at %}{{ activity_summary.last_attempt_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
+                    <tr><th>Last payment</th><td>{% if activity_summary.last_payment_at %}{{ activity_summary.last_payment_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
+                    <tr><th>Last report</th><td>{% if activity_summary.last_report_at %}{{ activity_summary.last_report_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
+                    <tr><th>Last support ticket</th><td>{% if activity_summary.last_ticket_at %}{{ activity_summary.last_ticket_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Recent quiz attempts</h2>
+            <table>
+                <thead>
+                    <tr><th>When</th><th>Exam</th><th>Set</th><th>Score</th><th>Ended</th></tr>
+                </thead>
+                <tbody>
+                    {% for attempt in recent_attempts %}
+                    <tr>
+                        <td>{{ attempt.created_at|format_user_datetime(current_user) }}</td>
+                        <td>{{ attempt.exam_title or '-' }}</td>
+                        <td>{{ attempt.set_title or '-' }}</td>
+                        <td>{{ attempt.correct_count }}/{{ attempt.requested_count }}</td>
+                        <td>{{ attempt.ended_reason }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5">No quiz attempts recorded yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

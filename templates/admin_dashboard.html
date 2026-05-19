@@ -188,7 +188,7 @@
                 <tbody>
                     {% for user in users %}
                     <tr>
-                        <td>{{ user.full_name }}</td>
+                        <td><a href="{{ url_for('admin.admin_user_detail', user_id=user.user_id) }}">{{ user.full_name }}</a></td>
                         <td>{{ user.user_role }}</td>
                         <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
                         <td>{{ user.created_at|format_user_datetime(current_user) }}</td>
@@ -341,7 +341,12 @@
         </div>
 
         <div class="data-card" id="orders-section" data-admin-panel tabindex="-1">
-            <h2>Orders</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Orders</h2>
+                    <p class="helper-text">Latest first. Uses the same date filter as payment logs.</p>
+                </div>
+            </div>
             <table>
                 <thead><tr><th>When</th><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr></thead>
                 <tbody>
@@ -349,7 +354,7 @@
                     <tr>
                         <td>{{ order.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ order.order_id }}</td>
-                        <td>{{ order.user_id }}</td>
+                        <td><a href="{{ url_for('admin.admin_user_detail', user_id=order.user_id) }}">{{ order.full_name or order.user_id }}</a></td>
                         <td>{{ order.plan_type }}</td>
                         <td>{{ order.status }}</td>
                     </tr>
@@ -367,7 +372,12 @@
         </div>
 
         <div class="data-card" id="support-section" data-admin-panel tabindex="-1">
-            <h2>Support tickets</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Support tickets</h2>
+                    <p class="helper-text">Latest first. Uses the same date filter as payment logs.</p>
+                </div>
+            </div>
             <table>
                 <thead><tr><th>When</th><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr></thead>
                 <tbody>
@@ -375,7 +385,7 @@
                     <tr>
                         <td>{{ ticket.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ ticket.support_id }}</td>
-                        <td>{{ ticket.full_name }}</td>
+                        <td><a href="{{ url_for('admin.admin_user_detail', user_id=ticket.user_id) }}">{{ ticket.account_full_name or ticket.full_name or ticket.user_id }}</a></td>
                         <td>{{ ticket.status }}</td>
                         <td>{{ ticket.message }}</td>
                     </tr>
@@ -393,17 +403,22 @@
         </div>
 
         <div class="data-card" id="reports-section" data-admin-panel tabindex="-1">
-            <h2>Question reports / reviews</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Question reports / reviews</h2>
+                    <p class="helper-text">Latest first. Click a user or question to jump into details.</p>
+                </div>
+            </div>
             <table>
                 <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Question</th><th>Reason</th></tr></thead>
                 <tbody>
                     {% for report in question_reports %}
                     <tr>
                         <td>{{ report.created_at|format_user_datetime(current_user) }}</td>
-                        <td>{{ report.full_name or report.user_id }}</td>
+                        <td><a href="{{ url_for('admin.admin_user_detail', user_id=report.user_id) }}">{{ report.full_name or report.user_id }}</a></td>
                         <td>{{ report.exam_title or '-' }}</td>
                         <td>{{ report.set_title or '-' }}</td>
-                        <td>{{ report.question_text or ('Question #' ~ report.question_id) }}</td>
+                        <td><a href="{{ url_for('admin.admin_set_questions', set_id=report.set_id, edit_question_id=report.question_id) }}#question-editor">{{ report.question_text or ('Question #' ~ report.question_id) }}</a></td>
                         <td>{{ report.reason }}</td>
                     </tr>
                     {% else %}
@@ -420,14 +435,19 @@
         </div>
 
         <div class="data-card" id="user-logs-section" data-admin-panel tabindex="-1">
-            <h2>User logs</h2>
+            <div class="admin-panel-header">
+                <div>
+                    <h2>User logs</h2>
+                    <p class="helper-text">Latest first. Click the user name to open account details.</p>
+                </div>
+            </div>
             <table>
                 <thead><tr><th>When</th><th>User</th><th>Exam</th><th>Set</th><th>Score</th><th>Ended</th></tr></thead>
                 <tbody>
                     {% for item in user_logs %}
                     <tr>
                         <td>{{ item.created_at|format_user_datetime(current_user) }}</td>
-                        <td>{{ item.full_name or item.user_id }}</td>
+                        <td><a href="{{ url_for('admin.admin_user_detail', user_id=item.user_id) }}">{{ item.full_name or item.user_id }}</a></td>
                         <td>{{ item.exam_title or '-' }}</td>
                         <td>{{ item.set_title or '-' }}</td>
                         <td>{{ item.correct_count }}/{{ item.requested_count }}</td>

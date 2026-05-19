@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div data-admin-scroll-preserve="true"></div>
 <section class="page-hero">
     <div class="container">
         <span class="eyebrow">Questions Manager</span>
@@ -14,9 +15,9 @@
 
 <section class="section">
     <div class="container admin-grid">
-        <div class="form-card" id="question-editor">
+        <div class="form-card" id="question-editor" data-admin-panel tabindex="-1">
             <h2>{{ 'Edit question' if editing_question else 'Add question to this set' }}</h2>
-            <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true">
+            <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="save_question">
                 <input type="hidden" name="return_anchor" value="question-editor">
                 <input type="hidden" name="set_id" value="{{ set_overview.set_id }}">
@@ -47,9 +48,9 @@
             </form>
         </div>
 
-        <div class="form-card">
+        <div class="form-card" id="bulk-upload" data-admin-panel tabindex="-1">
             <h2>Bulk upload into {{ set_overview.title }}</h2>
-            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="bulk_import">
                 <input type="hidden" name="set_id" value="{{ set_overview.set_id }}">
                 <input type="hidden" name="return_anchor" value="bulk-upload">
@@ -63,7 +64,7 @@
 
 <section class="section">
     <div class="container narrow">
-        <div class="data-card" id="questions-list">
+        <div class="data-card" id="questions-list" data-admin-panel tabindex="-1">
             <h2>All questions in {{ set_overview.title }}</h2>
             <table>
                 <thead><tr><th>ID</th><th>Question</th><th>Correct</th><th>Image</th><th>Actions</th></tr></thead>
@@ -77,7 +78,7 @@
                         <td>
                             <div class="table-actions">
                                 <a class="button button-secondary" href="{{ url_for('admin.admin_set_questions', set_id=set_overview.set_id, edit_question_id=question.question_id) }}#question-editor">Edit</a>
-                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?">
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this question only?" data-admin-preserve="true">
                                     <input type="hidden" name="action" value="delete_question">
                                     <input type="hidden" name="question_id" value="{{ question.question_id }}">
                                     <input type="hidden" name="return_anchor" value="questions-list">
