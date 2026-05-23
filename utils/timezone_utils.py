@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 
 DEFAULT_TIMEZONE = "Asia/Kolkata"
-DISPLAY_FORMAT = "%d %b %Y, %I:%M %p"
+DISPLAY_FORMAT = "%d %b %Y, %H:%M"
 _USER_TIMEZONE_KEYS = ("timezone", "timezone_name", "time_zone", "tz")
 
 

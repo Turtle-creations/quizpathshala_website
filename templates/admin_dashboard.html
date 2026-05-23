@@ -108,6 +108,22 @@
             </div>
         </div>
 
+        <div class="form-card" id="quiz-rules" data-admin-panel tabindex="-1">
+            <h2>Quiz resume and attempt rules</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
+                <input type="hidden" name="action" value="save_quiz_settings">
+                <input type="hidden" name="q" value="{{ search_query }}">
+                <input type="hidden" name="return_anchor" value="quiz-rules">
+                <label><input type="checkbox" name="allow_resume" value="1" {% if quiz_settings.allow_resume %}checked{% endif %}> Allow pause and resume</label>
+                <label for="max_attempts_per_set">Maximum attempts per set</label>
+                <input id="max_attempts_per_set" name="max_attempts_per_set" type="number" min="0" value="{{ quiz_settings.max_attempts_per_set }}">
+                <p class="helper-text">Use 0 for unlimited attempts.</p>
+                <label for="max_breaks">Maximum pauses before warning</label>
+                <input id="max_breaks" name="max_breaks" type="number" min="0" value="{{ quiz_settings.max_breaks }}">
+                <button class="button button-primary" type="submit">Save Quiz Rules</button>
+            </form>
+        </div>
+
         <div class="form-card" id="question-editor" data-admin-panel tabindex="-1">
             <h2>{{ 'Edit question' if editing_question else 'Add single question' }}</h2>
             <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true" data-admin-preserve="true">

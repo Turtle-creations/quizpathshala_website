@@ -28,21 +28,101 @@
                 <h3>Wrong</h3>
                 <p class="stat">{{ summary.wrong }}</p>
             </article>
+            <article class="info-card">
+                <h3>Progress</h3>
+                <p class="stat">{{ "%.2f"|format(summary.progress_percent) }}%</p>
+            </article>
+            <article class="info-card">
+                <h3>Rank</h3>
+                <p class="stat">{% if summary.rank %}#{{ summary.rank }}{% else %}-{% endif %}</p>
+            </article>
         </div>
         <div class="result-details text-page">
             <p><strong>Attempted:</strong> {{ summary.attempted }}</p>
+            <p><strong>Completed:</strong> {{ summary.completed }} / {{ summary.requested_count }}</p>
             <p><strong>Skipped:</strong> {{ summary.skipped }}</p>
             <p><strong>Negative marking:</strong> -{{ "%.2f"|format(summary.negative_marking) }}</p>
             <p><strong>Ended reason:</strong> {{ summary.ended_reason.replace('_', ' ')|title }}</p>
-            <p><strong>Started at:</strong> {{ summary.started_at|format_user_datetime(user) }}</p>
-            <p><strong>Completed at:</strong> {{ summary.completed_at|format_user_datetime(user) }}</p>
+            <p><strong>Started at:</strong> {{ summary.started_at_display }}</p>
+            <p><strong>Completed at:</strong> {{ summary.completed_at_display }}</p>
         </div>
         <div class="hero-actions">
             <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Play Quiz Again</a>
+            <a class="button button-secondary" href="{{ url_for('quiz.result_pdf') }}">Download PDF</a>
             <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">Upgrade to Premium</a>
         </div>
     </div>
 </section>
+
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Top 10 rankers</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Name</th>
+                        <th>Score</th>
+                        <th>Accuracy</th>
+                        <th>Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in leaderboard_rows %}
+                    <tr class="{% if row.is_current_user %}leaderboard-row-current{% endif %}">
+                        <td>{{ row.rank_display }}</td>
+                        <td>{{ row.full_name }}</td>
+                        <td>{{ "%.2f"|format(row.score) }}</td>
+                        <td>{{ "%.2f"|format(row.accuracy) }}%</td>
+                        <td>{{ "%.2f"|format(row.progress_percent) }}%</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5">No ranking data available yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+{% if show_rank_zone %}
+<section class="section">
+    <div class="container narrow">
+        <div class="data-card">
+            <h2>Your rank zone</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Name</th>
+                        <th>Score</th>
+                        <th>Accuracy</th>
+                        <th>Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rank_zone_rows %}
+                    <tr class="{% if row.is_current_user %}leaderboard-row-current{% endif %}">
+                        <td>{{ row.rank_display }}</td>
+                        <td>{{ row.full_name }}</td>
+                        <td>{{ "%.2f"|format(row.score) }}</td>
+                        <td>{{ "%.2f"|format(row.accuracy) }}%</td>
+                        <td>{{ "%.2f"|format(row.progress_percent) }}%</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5">Your nearby rank zone is not available yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endif %}
 
 <section class="section">
     <div class="container narrow">
@@ -57,6 +137,16 @@
                 <p><strong>Your answer:</strong> {{ item.selected_text or 'Not answered' }}</p>
                 <p><strong>Correct answer:</strong> {{ item.correct_answer }}</p>
                 <p><strong>Status:</strong> <span class="answer-status {% if item.correct %}answer-status-correct{% else %}answer-status-wrong{% endif %}">{{ 'Correct' if item.correct else 'Wrong' }}</span></p>
+                <div class="option-list option-list-review">
+                    {% for option in item.options %}
+                    {% set is_selected = loop.index0 == item.selected_index %}
+                    {% set is_correct = loop.index0 == item.correct_index %}
+                    <div class="option-review {% if is_selected %}option-review-selected{% endif %} {% if is_correct %}option-review-correct{% endif %}">
+                        <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
+                        <span class="option-copy">{{ option.text }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
                 {% if item.explanation %}
                 <p><strong>Explanation:</strong> {{ item.explanation }}</p>
                 {% endif %}

@@ -1,4 +1,4 @@
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, redirect, render_template, request, send_file, session, url_for
 
 from db.database import database
 from utils.logging_utils import get_logger
@@ -6,8 +6,10 @@ from utils.logging_utils import get_logger
 from routes.auth import login_required
 from services.exam_service_db import exam_service
 from services.premium_service_db import premium_service
+from services.quiz_settings_service import quiz_settings_service
 from services.user_service_db import user_service
 from services.web_identity_service import web_identity_service
+from services.web_quiz_pdf_service import web_quiz_pdf_service
 from services.web_quiz_service import web_quiz_service
 
 
@@ -174,6 +176,7 @@ def _active_set_state(active_session: dict | None, set_id: int) -> dict | None:
         "total_questions": total_questions,
         "progress_percent": progress_percent,
         "awaiting_next": bool(active_session.get("awaiting_next")),
+        "is_paused": bool(active_session.get("is_paused")),
     }
 
 
@@ -235,11 +238,13 @@ def quiz_start():
         )
 
     exams = [dict(item) for item in exam_service.get_exams()]
+    exam_catalog = web_quiz_service.list_exam_catalog(user_id)
     return render_template(
         "quiz_start.html",
         page_title="Start Quiz",
         user=user,
         exams=exams,
+        exam_catalog=exam_catalog,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
@@ -269,6 +274,10 @@ def exam_sets(exam_id: int):
         if action == "continue":
             active_session = web_quiz_service.get_session(user_id)
             if active_session and int(active_session.get("set_id") or 0) == set_id:
+                if active_session.get("is_paused"):
+                    resume_result = web_quiz_service.resume_quiz(user_id, set_id=set_id)
+                    if resume_result and resume_result.get("warning"):
+                        flash(str(resume_result["warning"]), "error")
                 return redirect(url_for("quiz.play"))
             flash("No active quiz session was found for this set.", "error")
             return redirect(url_for("quiz.exam_sets", exam_id=exam_id))
@@ -295,6 +304,7 @@ def exam_sets(exam_id: int):
     premium_active = premium_service.is_premium(user_id)
     admin_access = user_service.is_admin(user_id)
     active_session = web_quiz_service.get_session(user_id)
+    quiz_settings = quiz_settings_service.get_settings()
     attempt_summaries = _summarize_attempts_by_set(_load_user_attempts_for_exam(user_id, exam_id))
     rank_map = _load_rank_map_for_exam(exam_id)
 
@@ -324,6 +334,7 @@ def exam_sets(exam_id: int):
                 "active_state": active_state,
                 "progress_text": _progress_text(latest_attempt, active_state),
                 "progress_percent": progress_percent,
+                "accuracy": float(best_attempt.get("accuracy") or 0) if best_attempt else 0.0,
                 "last_attempted_at": (
                     latest_attempt.get("created_at")
                     if latest_attempt
@@ -334,6 +345,7 @@ def exam_sets(exam_id: int):
                 "rank": rank_map.get(set_id, {}).get(int(user_id)),
                 "question_count_options": _question_count_options_for_set(exam, set_item),
                 "action_label": "Continue" if active_state else "Retry" if latest_attempt else "Play",
+                "attempt_count": web_quiz_service.count_attempts_for_set(user_id, set_id),
             }
         )
 
@@ -343,6 +355,7 @@ def exam_sets(exam_id: int):
         user=user,
         exam=exam,
         sets=sets,
+        quiz_settings=quiz_settings,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
@@ -368,9 +381,25 @@ def play():
         _clear_quiz_session_snapshot()
         flash("Your previous quiz session was unavailable. Please start again.", "error")
         return redirect(url_for("quiz.quiz_start"))
+    if quiz_session.get("is_paused") and request.method == "GET":
+        set_item = exam_service.get_set(int(quiz_session.get("set_id") or 0)) or {}
+        flash("This quiz is paused. Use Resume from the set page to continue.", "success")
+        return redirect(url_for("quiz.exam_sets", exam_id=int(set_item.get("exam_id") or 0)))
 
     if request.method == "POST":
         action = request.form.get("action", "")
+        if action == "pause":
+            pause_result = web_quiz_service.pause_quiz(user_id)
+            if not pause_result:
+                flash("No active quiz session was found.", "error")
+                return redirect(url_for("quiz.quiz_start"))
+            if pause_result.get("message"):
+                flash(str(pause_result["message"]), "error" if not pause_result.get("ok") else "success")
+            if pause_result.get("warning"):
+                flash(str(pause_result["warning"]), "error")
+            set_item = exam_service.get_set(int(quiz_session.get("set_id") or 0)) or {}
+            return redirect(url_for("quiz.exam_sets", exam_id=int(set_item.get("exam_id") or 0)))
+
         if action == "answer":
             selected_raw = request.form.get("selected_option")
             if selected_raw is None:
@@ -459,6 +488,13 @@ def play():
         quiz_session=quiz_snapshot,
         question=question,
         active_result=active_result,
+        rules_text=[
+            "Each correct answer gives +1 mark.",
+            "Each wrong answer deducts 0.25 mark.",
+            "Skipping or timeout gives 0 mark.",
+            "Use Pause only if needed and resume from the same set.",
+            "Do not refresh during a question unless necessary.",
+        ],
         media_route_name="media_file",
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
@@ -493,6 +529,9 @@ def result():
         flash("No quiz result found. Start a quiz first.", "error")
         return redirect(url_for("quiz.quiz_start"))
 
+    summary = web_quiz_service.build_summary_display_data(summary, user)
+    leaderboard = web_quiz_service.leaderboard_for_set(int(summary.get("set_id") or 0), current_user_id=user_id)
+    summary["rank"] = leaderboard.get("current_rank")
     current_set = {"title": summary.get("set_title") or "Quiz"}
     performance = web_quiz_service.user_performance_snapshot(user_id, limit=5)
     attempted_review_items = [item for item in summary.get("review_items", []) if item.get("action") == "answer"]
@@ -505,5 +544,36 @@ def result():
         current_set=current_set,
         performance=performance,
         attempted_review_items=attempted_review_items,
+        leaderboard_rows=leaderboard.get("top_ten", []),
+        rank_zone_rows=leaderboard.get("rank_zone", []),
+        show_rank_zone=bool(user.get("is_premium")),
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
+
+
+@quiz_blueprint.route("/result/pdf", methods=["GET"])
+@login_required
+def result_pdf():
+    user = web_identity_service.get_authenticated_user_snapshot()
+    user_id = web_identity_service.get_authenticated_user_id()
+    if not user_id:
+        flash("Please log in to continue.", "error")
+        return redirect(url_for("auth.login"))
+
+    summary = web_quiz_service.load_completed_summary(user_id) or session.get("last_quiz_result")
+    if not summary:
+        flash("No quiz result found. Start a quiz first.", "error")
+        return redirect(url_for("quiz.quiz_start"))
+
+    summary = web_quiz_service.build_summary_display_data(summary, user)
+    leaderboard = web_quiz_service.leaderboard_for_set(int(summary.get("set_id") or 0), current_user_id=user_id)
+    summary["rank"] = leaderboard.get("current_rank")
+
+    file_path = web_quiz_pdf_service.generate_result_pdf(
+        user_name=user.get("full_name") or "User",
+        summary=summary,
+        leaderboard_rows=leaderboard.get("top_ten", []),
+        rank_zone_rows=leaderboard.get("rank_zone", []),
+        show_rank_zone=bool(user.get("is_premium")),
+    )
+    return send_file(file_path, as_attachment=True, download_name=file_path.name)

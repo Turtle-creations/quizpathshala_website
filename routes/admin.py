@@ -10,6 +10,7 @@ from config import ADMIN_PASSWORD, SECRET_KEY, SUPPORT_TELEGRAM
 from db.database import database
 from services.exam_service_db import exam_service
 from services.payment_service_db import payment_service
+from services.quiz_settings_service import quiz_settings_service
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
 from utils.logging_utils import get_logger
@@ -710,6 +711,13 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
             if not updated_user and status == "not_found":
                 raise ValueError("Target user not found.")
             flash("User role updated successfully.", "success")
+        elif action == "save_quiz_settings":
+            quiz_settings_service.update_settings(
+                allow_resume=bool(request.form.get("allow_resume")),
+                max_attempts_per_set=int(request.form.get("max_attempts_per_set", "0") or "0"),
+                max_breaks=int(request.form.get("max_breaks", "4") or "4"),
+            )
+            flash("Quiz rules updated successfully.", "success")
         else:
             flash("Unknown admin action.", "error")
     except Exception as exc:

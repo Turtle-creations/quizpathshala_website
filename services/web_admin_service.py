@@ -8,6 +8,7 @@ from flask import g, has_request_context
 from db.database import database
 from services.exam_service_db import exam_service
 from services.payment_service_db import SUBSCRIPTION_PLANS
+from services.quiz_settings_service import quiz_settings_service
 from services.support_service_db import support_service
 from services.user_service_db import now_iso, user_service
 
@@ -161,6 +162,7 @@ class WebAdminService:
                 "logs_from": (logs_from or "").strip(),
                 "logs_to": (logs_to or "").strip(),
             },
+            "quiz_settings": quiz_settings_service.get_settings(),
         }
         self._set_cached_dashboard_page_data(cache_key, payload)
         return copy.deepcopy(payload)

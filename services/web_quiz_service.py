@@ -1,4 +1,4 @@
-from copy import deepcopy
+﻿from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import random
@@ -9,7 +9,9 @@ from config import DEFAULT_QUESTION_TIME
 from db.database import database
 from services.exam_service_db import exam_service
 from services.premium_service_db import premium_service
+from services.quiz_settings_service import quiz_settings_service
 from services.user_service_db import user_service
+from utils.timezone_utils import format_user_datetime
 from utils.logging_utils import get_logger
 
 
@@ -20,6 +22,7 @@ class WebQuizService:
     ACTIVE_SESSION_TABLE = "web_quiz_sessions"
     FULL_SET_EXAM_TITLE = "SSE"
     FULL_SET_TITLE = "Set-1"
+    BREAK_WARNING_MESSAGE = "You have taken too many breaks. Please complete the quiz or come back later."
 
     def __init__(self) -> None:
         self.sessions: dict[int, dict] = {}
@@ -58,11 +61,26 @@ class WebQuizService:
             return None, "This quiz set is not available."
 
         exam_item = exam_service.get_exam(int(set_item.get("exam_id") or 0))
+        settings = quiz_settings_service.get_settings()
+        existing_session = self.get_session(user_id)
+        if (
+            existing_session
+            and settings.get("allow_resume", True)
+            and int(existing_session.get("set_id") or 0) == int(set_id)
+        ):
+            return None, "You already have an unfinished quiz in this set. Please resume it first."
+
         self.clear_session(user_id)
 
         locked = bool(int(set_item.get("is_premium_locked", 0)))
         if locked and not (premium_service.is_premium(user_id) or user_service.is_admin(user_id)):
             return None, "This quiz set is premium-only."
+
+        max_attempts = int(settings.get("max_attempts_per_set") or 0)
+        if max_attempts > 0 and not user_service.is_admin(user_id):
+            attempt_count = self.count_attempts_for_set(user_id, set_id)
+            if attempt_count >= max_attempts:
+                return None, f"You have reached the maximum of {max_attempts} attempts for this set."
 
         use_full_set = self._should_force_full_set(exam_item, set_item)
         if not use_full_set and int(requested_count) not in self.QUIZ_COUNT_OPTIONS:
@@ -99,6 +117,10 @@ class WebQuizService:
             "responses": [],
             "stats_started": False,
             "last_processed_key": None,
+            "pause_count": 0,
+            "is_paused": False,
+            "paused_at": None,
+            "paused_remaining_seconds": None,
         }
         self._persist_session(user_id)
         self.logger.info(
@@ -149,6 +171,7 @@ class WebQuizService:
         quiz_session = self.get_session(user_id)
         if not quiz_session:
             return None
+        settings = quiz_settings_service.get_settings()
 
         current_question = None
         index = int(quiz_session.get("index") or 0)
@@ -174,6 +197,11 @@ class WebQuizService:
             "responses": deepcopy(quiz_session.get("responses") or []),
             "current_question": deepcopy(current_question),
             "stats_started": bool(quiz_session.get("stats_started")),
+            "pause_count": int(quiz_session.get("pause_count") or 0),
+            "is_paused": bool(quiz_session.get("is_paused")),
+            "allow_resume": bool(settings.get("allow_resume", True)),
+            "max_breaks": int(settings.get("max_breaks") or 0),
+            "too_many_breaks": self.has_exceeded_break_limit(quiz_session),
         }
 
     def get_current_question(self, user_id: int) -> dict | None:
@@ -191,6 +219,55 @@ class WebQuizService:
         question["number"] = index + 1
         question["total"] = len(questions)
         return question
+
+    def pause_quiz(self, user_id: int) -> dict | None:
+        session = self.get_session(user_id)
+        if not session:
+            return None
+
+        settings = quiz_settings_service.get_settings()
+        if not bool(settings.get("allow_resume", True)):
+            return {"ok": False, "message": "Quiz resume is currently disabled by the admin."}
+        if session.get("awaiting_next"):
+            return {"ok": False, "message": "You can pause only while a live question is active."}
+        if session.get("is_paused"):
+            return {"ok": True, "message": "This quiz is already paused."}
+
+        session["pause_count"] = int(session.get("pause_count") or 0) + 1
+        session["is_paused"] = True
+        session["paused_at"] = self._timestamp_now()
+        session["paused_remaining_seconds"] = self.remaining_seconds(user_id)
+        self._persist_session(user_id)
+        return {
+            "ok": True,
+            "pause_count": int(session.get("pause_count") or 0),
+            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session) else None,
+        }
+
+    def resume_quiz(self, user_id: int, set_id: int | None = None) -> dict | None:
+        session = self.get_session(user_id)
+        if not session:
+            return None
+        if set_id is not None and int(session.get("set_id") or 0) != int(set_id):
+            return None
+        if not session.get("is_paused"):
+            return {"ok": True, "warning": None}
+
+        questions = session.get("questions") or []
+        index = int(session.get("index") or 0)
+        question = questions[index] if 0 <= index < len(questions) else None
+        time_limit = int((question or {}).get("time_limit") or DEFAULT_QUESTION_TIME)
+        paused_remaining = int(session.get("paused_remaining_seconds") or 0)
+        elapsed = max(time_limit - paused_remaining, 0)
+        session["current_question_started_at"] = time.time() - elapsed
+        session["is_paused"] = False
+        session["paused_at"] = None
+        session["paused_remaining_seconds"] = None
+        self._persist_session(user_id)
+        return {
+            "ok": True,
+            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session) else None,
+        }
 
     def answer_question(self, user_id: int, selected_index: int | None, action: str = "answer") -> dict | None:
         session = self.get_session(user_id)
@@ -223,7 +300,7 @@ class WebQuizService:
             return deepcopy(session.get("last_result"))
 
         question = self.get_current_question(user_id)
-        if not question or session["locked"]:
+        if not question or session["locked"] or session.get("is_paused"):
             if not question:
                 self.logger.warning(
                     "Quiz answer ignored without active question | user_id=%s index=%s action=%s locked=%s",
@@ -316,6 +393,9 @@ class WebQuizService:
         session["last_result"] = None
         session["last_processed_key"] = None
         session["current_question_started_at"] = time.time()
+        session["is_paused"] = False
+        session["paused_at"] = None
+        session["paused_remaining_seconds"] = None
         has_more = next_index < len(session.get("questions") or [])
         if has_more:
             self._persist_session(user_id)
@@ -380,6 +460,8 @@ class WebQuizService:
             return 0
         if session.get("awaiting_next"):
             return 0
+        if session.get("is_paused"):
+            return max(0, int(session.get("paused_remaining_seconds") or 0))
         questions = session.get("questions") or []
         index = int(session.get("index") or 0)
         if index < 0 or index >= len(questions):
@@ -434,11 +516,85 @@ class WebQuizService:
                 {
                     **item,
                     "attempted": attempted,
+                    "completed": attempted + int(item.get("skipped_count") or 0),
                     "score": score,
                     "accuracy": accuracy,
+                    "progress_percent": (
+                        ((attempted + int(item.get("skipped_count") or 0)) / int(item.get("requested_count") or 0) * 100)
+                        if int(item.get("requested_count") or 0)
+                        else 0.0
+                    ),
                 }
             )
         return attempts
+
+    def count_attempts_for_set(self, user_id: int, set_id: int) -> int:
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM quiz_attempts WHERE user_id = ? AND set_id = ?",
+                (user_id, set_id),
+            ).fetchone()
+        return int((row["count"] if row else 0) or 0)
+
+    def has_exceeded_break_limit(self, session: dict | None) -> bool:
+        if not session:
+            return False
+        max_breaks = int(quiz_settings_service.get_settings().get("max_breaks") or 0)
+        return int(session.get("pause_count") or 0) > max_breaks
+
+    def leaderboard_for_set(self, set_id: int, *, current_user_id: int | None = None) -> dict:
+        with database.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    qa.*,
+                    u.full_name,
+                    u.is_premium
+                FROM quiz_attempts qa
+                JOIN users u ON u.user_id = qa.user_id
+                WHERE qa.set_id = ?
+                ORDER BY qa.created_at DESC, qa.attempt_id DESC
+                """,
+                (set_id,),
+            ).fetchall()
+
+        best_attempts: dict[int, dict] = {}
+        for row in rows:
+            item = self._attempt_with_metrics(dict(row))
+            attempt_user_id = int(item.get("user_id") or 0)
+            current = best_attempts.get(attempt_user_id)
+            if current is None or self._attempt_rank_key(item) > self._attempt_rank_key(current):
+                best_attempts[attempt_user_id] = item
+
+        ordered = sorted(best_attempts.values(), key=self._attempt_rank_key, reverse=True)
+        top_ten = [
+            self._serialize_leaderboard_row(item, index, current_user_id)
+            for index, item in enumerate(ordered[:10], start=1)
+        ]
+
+        current_rank = None
+        current_index = None
+        for index, item in enumerate(ordered, start=1):
+            if current_user_id is not None and int(item.get("user_id") or 0) == int(current_user_id):
+                current_rank = index
+                current_index = index - 1
+                break
+
+        rank_zone: list[dict] = []
+        if current_index is not None:
+            start = max(current_index - 4, 0)
+            end = min(start + 10, len(ordered))
+            start = max(end - 10, 0)
+            rank_zone = [
+                self._serialize_leaderboard_row(item, index, current_user_id)
+                for index, item in enumerate(ordered[start:end], start=start + 1)
+            ]
+
+        return {
+            "top_ten": top_ten,
+            "rank_zone": rank_zone,
+            "current_rank": current_rank,
+        }
 
     def submit_question_report(self, *, user_id: int, question_id: int, set_id: int, reason: str) -> int:
         cleaned_reason = " ".join(str(reason or "").strip().split())
@@ -576,6 +732,14 @@ class WebQuizService:
                 "responses": responses,
                 "stats_started": bool(payload.get("stats_started")),
                 "last_processed_key": payload.get("last_processed_key"),
+                "pause_count": int(payload.get("pause_count") or 0),
+                "is_paused": bool(payload.get("is_paused")),
+                "paused_at": payload.get("paused_at"),
+                "paused_remaining_seconds": (
+                    int(payload.get("paused_remaining_seconds"))
+                    if payload.get("paused_remaining_seconds") is not None
+                    else None
+                ),
             }
         except (TypeError, ValueError):
             return None
@@ -638,13 +802,17 @@ class WebQuizService:
         attempted = correct + wrong
         score = correct - (wrong * 0.25)
         accuracy = (correct / attempted * 100) if attempted else 0.0
+        completed = attempted + skipped
+        progress_percent = (completed / requested_count * 100) if requested_count else 0.0
         return {
             "correct": correct,
             "wrong": wrong,
             "skipped": skipped,
             "attempted": attempted,
+            "completed": completed,
             "score": score,
             "accuracy": accuracy,
+            "progress_percent": progress_percent,
             "negative_marking": wrong * 0.25,
             "set_id": set_id,
             "requested_count": requested_count,
@@ -675,5 +843,52 @@ class WebQuizService:
     def _timestamp_now(self) -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
+    def _attempt_with_metrics(self, item: dict) -> dict:
+        attempted = int(item.get("correct_count") or 0) + int(item.get("wrong_count") or 0)
+        skipped = int(item.get("skipped_count") or 0)
+        requested_count = int(item.get("requested_count") or 0)
+        completed = attempted + skipped
+        return {
+            **item,
+            "attempted": attempted,
+            "completed": completed,
+            "score": float(item.get("correct_count") or 0) - (float(item.get("wrong_count") or 0) * 0.25),
+            "accuracy": (float(item.get("correct_count") or 0) / attempted * 100) if attempted else 0.0,
+            "progress_percent": (completed / requested_count * 100) if requested_count else 0.0,
+        }
+
+    def _attempt_rank_key(self, item: dict) -> tuple:
+        return (
+            float(item.get("score") or 0),
+            float(item.get("accuracy") or 0),
+            int(item.get("correct_count") or 0),
+            -int(item.get("wrong_count") or 0),
+            str(item.get("created_at") or ""),
+            int(item.get("attempt_id") or 0),
+        )
+
+    def _serialize_leaderboard_row(self, item: dict, rank: int, current_user_id: int | None) -> dict:
+        return {
+            **item,
+            "rank": rank,
+            "rank_display": f"#{rank}",
+            "full_name": item.get("full_name") or f"User {item.get('user_id')}",
+            "is_current_user": current_user_id is not None and int(item.get("user_id") or 0) == int(current_user_id),
+        }
+
+    def build_summary_display_data(self, summary: dict, user: dict | None) -> dict:
+        item = dict(summary or {})
+        item["started_at_display"] = format_user_datetime(item.get("started_at"), user)
+        item["completed_at_display"] = format_user_datetime(item.get("completed_at"), user)
+        return item
+
 
 web_quiz_service = WebQuizService()
+
+
+
+
+
+
+
+

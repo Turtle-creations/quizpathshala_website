@@ -7,7 +7,7 @@
             <div>
                 <span class="eyebrow">Playing {{ current_set.title if current_set else "Quiz" }}</span>
                 <h1>Question {{ question.number }} of {{ question.total }}</h1>
-                <p>{{ quiz_session.correct_count }} correct | {{ quiz_session.wrong_count }} wrong | {{ quiz_session.skipped_count }} skipped</p>
+                <p>{{ quiz_session.correct_count }} correct | {{ quiz_session.wrong_count }} wrong | {{ quiz_session.skipped_count }} skipped | {{ "%.2f"|format((question.number - 1) / question.total * 100) }}% completed</p>
             </div>
             <div class="timer-card">
                 <span>Time left</span>
@@ -34,9 +34,15 @@
                     {% endfor %}
                 </div>
                 <div class="hero-actions">
+                    {% if quiz_session.allow_resume %}
+                    <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='pause'">Pause</button>
+                    {% endif %}
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='skip'">Skip</button>
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='submit'">Submit Quiz</button>
                 </div>
+                {% if quiz_session.pause_count %}
+                <p class="helper-text">Breaks used: {{ quiz_session.pause_count }}{% if quiz_session.max_breaks or quiz_session.max_breaks == 0 %} / {{ quiz_session.max_breaks }}{% endif %}</p>
+                {% endif %}
             </form>
             {% else %}
             <div class="answer-review-shell">
@@ -50,6 +56,17 @@
                     {% else %}
                     Wrong
                     {% endif %}
+                </div>
+
+                <div class="option-list option-list-review">
+                    {% for option in active_result.options %}
+                    {% set is_selected = loop.index0 == active_result.selected_index %}
+                    {% set is_correct = loop.index0 == active_result.correct_index %}
+                    <div class="option-review {% if is_selected %}option-review-selected{% endif %} {% if is_correct %}option-review-correct{% endif %}">
+                        <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
+                        <span class="option-copy">{{ option.text }}</span>
+                    </div>
+                    {% endfor %}
                 </div>
 
                 <article class="answer-review-card answer-review-card-correct answer-review-card-compact">
