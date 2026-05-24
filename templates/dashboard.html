@@ -13,7 +13,7 @@
     <div class="container admin-grid">
         <article class="info-card">
             <h2>Profile</h2>
-            <p><strong>Role:</strong> {{ user.user_role.replace('_', ' ')|title }}</p>
+            <p><strong>Name:</strong> {{ user.full_name or "QuizPathshala User" }}</p>
             <p><strong>Email:</strong> {{ user.email or user.login_identifier or "Not set" }}</p>
             <p><strong>Phone:</strong> {{ user.phone_number or "Not set" }}</p>
             <p><strong>Premium:</strong> {{ "Active" if user.is_premium else "Free" }}</p>
@@ -21,9 +21,10 @@
         </article>
         <article class="info-card">
             <h2>Performance</h2>
+            {% set total_answered = (user.correct_answers or 0) + (user.wrong_answers or 0) %}
+            {% set overall_accuracy = ((user.correct_answers or 0) / total_answered * 100) if total_answered else 0 %}
             <p><strong>Quizzes played:</strong> {{ user.quiz_played }}</p>
-            <p><strong>Correct answers:</strong> {{ user.correct_answers }}</p>
-            <p><strong>Wrong answers:</strong> {{ user.wrong_answers }}</p>
+            <p><strong>Overall accuracy:</strong> {{ "%.2f"|format(overall_accuracy) }}%</p>
             <p><strong>Score:</strong> {{ "%.2f"|format(user.score) }}</p>
             <p><strong>Best recent score:</strong> {{ "%.2f"|format(performance.best_score) }}</p>
             <p><strong>Average recent score:</strong> {{ "%.2f"|format(performance.average_score) }}</p>

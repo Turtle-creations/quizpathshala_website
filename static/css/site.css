@@ -847,11 +847,16 @@ th, td {
     box-shadow: 0 10px 20px rgba(59, 116, 196, 0.08);
 }
 
-.option-review-selected,
 .option-button-pending {
     border-color: rgba(30, 64, 175, 0.42);
     background: linear-gradient(180deg, #e8f0ff 0%, #dce8ff 100%);
     box-shadow: 0 14px 26px rgba(30, 64, 175, 0.18);
+}
+
+.option-review-wrong {
+    border-color: rgba(185, 28, 28, 0.42);
+    background: linear-gradient(180deg, #fff1f2 0%, #ffe2e5 100%);
+    box-shadow: 0 14px 26px rgba(185, 28, 28, 0.14);
 }
 
 .option-review-correct {
@@ -859,7 +864,7 @@ th, td {
     background: linear-gradient(180deg, #eefbf2 0%, #dcf5e4 100%);
 }
 
-.option-review-selected .option-copy,
+.option-review-wrong .option-copy,
 .option-review-correct .option-copy {
     color: #0f172a;
     font-weight: 600;
@@ -1320,19 +1325,21 @@ body.quiz-sidebar-open {
 
 .quiz-title-link,
 .quiz-collapsible-toggle {
-    color: var(--text);
+    color: var(--accent-dark);
     font-family: var(--font-heading);
     font-size: 1.22rem;
     font-weight: 700;
     line-height: 1.35;
-    text-decoration: none;
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
 }
 
 .quiz-title-link:hover,
 .quiz-title-link:focus-visible,
 .quiz-collapsible-toggle:hover,
 .quiz-collapsible-toggle:focus-visible {
-    color: var(--accent-dark);
+    color: #123a96;
 }
 
 .quiz-collapsible-panel {

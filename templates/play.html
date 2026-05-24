@@ -62,17 +62,12 @@
                     {% for option in active_result.options %}
                     {% set is_selected = loop.index0 == active_result.selected_index %}
                     {% set is_correct = loop.index0 == active_result.correct_index %}
-                    <div class="option-review {% if is_selected %}option-review-selected{% endif %} {% if is_correct %}option-review-correct{% endif %}">
+                    <div class="option-review{% if is_selected and not is_correct %} option-review-wrong{% endif %}{% if is_correct %} option-review-correct{% endif %}">
                         <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
                         <span class="option-copy">{{ option.text }}</span>
                     </div>
                     {% endfor %}
                 </div>
-
-                <article class="answer-review-card answer-review-card-correct answer-review-card-compact">
-                    <span class="answer-review-label">Correct answer</span>
-                    <p class="answer-review-value">{{ active_result.correct_answer }}</p>
-                </article>
             </div>
             <form accept-charset="UTF-8" method="post" id="next-question-form" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="next">
