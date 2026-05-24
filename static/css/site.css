@@ -1349,6 +1349,10 @@ body.quiz-sidebar-open {
     background: rgba(15, 23, 42, 0.48);
 }
 
+.quiz-rules-modal[hidden] {
+    display: none;
+}
+
 .quiz-rules-dialog {
     width: min(540px, 100%);
     padding: 1.5rem;

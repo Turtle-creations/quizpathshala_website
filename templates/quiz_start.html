@@ -93,8 +93,25 @@
 </section>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+    var mobileAccordionQuery = window.matchMedia("(max-width: 980px)");
+
+    function clearDesktopAccordionState() {
+        if (mobileAccordionQuery.matches) {
+            return;
+        }
+        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
+            button.classList.remove("is-open");
+        });
+        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-panel")).forEach(function (panel) {
+            panel.classList.remove("is-open");
+        });
+    }
+
     Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
         button.addEventListener("click", function () {
+            if (!mobileAccordionQuery.matches) {
+                return;
+            }
             var group = button.getAttribute("data-accordion-group");
             var targetId = button.getAttribute("data-accordion-target");
             var target = document.getElementById(targetId);
@@ -113,6 +130,13 @@ document.addEventListener("DOMContentLoaded", function () {
             target.classList.toggle("is-open");
         });
     });
+
+    clearDesktopAccordionState();
+    if (typeof mobileAccordionQuery.addEventListener === "function") {
+        mobileAccordionQuery.addEventListener("change", clearDesktopAccordionState);
+    } else if (typeof mobileAccordionQuery.addListener === "function") {
+        mobileAccordionQuery.addListener(clearDesktopAccordionState);
+    }
 });
 </script>
 {% endblock %}

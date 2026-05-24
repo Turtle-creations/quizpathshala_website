@@ -165,6 +165,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var modal = document.getElementById("quiz-rules-modal");
     var continueButton = document.getElementById("quiz-rules-continue");
     var cancelButton = document.getElementById("quiz-rules-cancel");
+    var mobileAccordionQuery = window.matchMedia("(max-width: 980px)");
 
     Array.prototype.slice.call(document.querySelectorAll("[data-quiz-start-form='true']")).forEach(function (form) {
         form.addEventListener("submit", function (event) {
@@ -180,8 +181,34 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    function submitActiveForm() {
+        if (!activeForm) {
+            return;
+        }
+        if (typeof activeForm.requestSubmit === "function") {
+            activeForm.requestSubmit();
+            return;
+        }
+        activeForm.submit();
+    }
+
+    function clearDesktopAccordionState() {
+        if (mobileAccordionQuery.matches) {
+            return;
+        }
+        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
+            button.classList.remove("is-open");
+        });
+        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-panel")).forEach(function (panel) {
+            panel.classList.remove("is-open");
+        });
+    }
+
     Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
         button.addEventListener("click", function () {
+            if (!mobileAccordionQuery.matches) {
+                return;
+            }
             var group = button.getAttribute("data-accordion-group");
             var targetId = button.getAttribute("data-accordion-target");
             var target = document.getElementById(targetId);
@@ -201,6 +228,13 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    clearDesktopAccordionState();
+    if (typeof mobileAccordionQuery.addEventListener === "function") {
+        mobileAccordionQuery.addEventListener("change", clearDesktopAccordionState);
+    } else if (typeof mobileAccordionQuery.addListener === "function") {
+        mobileAccordionQuery.addListener(clearDesktopAccordionState);
+    }
+
     if (continueButton) {
         continueButton.addEventListener("click", function () {
             if (!activeForm) {
@@ -209,7 +243,7 @@ document.addEventListener("DOMContentLoaded", function () {
             activeForm.dataset.rulesConfirmed = "true";
             modal.hidden = true;
             document.body.classList.remove("modal-open");
-            activeForm.requestSubmit();
+            submitActiveForm();
         });
     }
 
