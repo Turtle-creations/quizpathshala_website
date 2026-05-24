@@ -35,7 +35,7 @@
                 <div class="quiz-set-card-head quiz-set-card-mobile-head">
                     <div>
                         <h3 class="quiz-set-title-desktop">{{ set_item.title }}</h3>
-                        <button class="quiz-collapsible-toggle" type="button" data-accordion-group="set-accordion" data-accordion-target="set-panel-{{ set_item.set_id }}">
+                        <button class="quiz-collapsible-toggle quiz-mobile-only" type="button" data-accordion-group="set-accordion" data-accordion-target="set-panel-{{ set_item.set_id }}">
                             {{ set_item.title }}
                         </button>
                         <p>{{ set_item.description or "Practice set" }}</p>
@@ -185,10 +185,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!activeForm) {
             return;
         }
-        if (typeof activeForm.requestSubmit === "function") {
-            activeForm.requestSubmit();
-            return;
-        }
+        Array.prototype.slice.call(activeForm.querySelectorAll("button, input[type='submit']")).forEach(function (button) {
+            button.disabled = true;
+        });
         activeForm.submit();
     }
 

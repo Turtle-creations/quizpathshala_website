@@ -1235,6 +1235,10 @@ body.quiz-sidebar-open {
     display: none;
 }
 
+.quiz-mobile-only {
+    display: none;
+}
+
 .quiz-exam-card,
 .quiz-set-card {
     display: grid;
@@ -1399,6 +1403,10 @@ body.modal-open {
     .quiz-mobile-accordion {
         display: grid;
         gap: 1rem;
+    }
+
+    .quiz-mobile-only {
+        display: block;
     }
 
     .quiz-set-title-desktop {
