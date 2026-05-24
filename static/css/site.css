@@ -853,21 +853,43 @@ th, td {
     box-shadow: 0 14px 26px rgba(30, 64, 175, 0.18);
 }
 
+.option-review-selected {
+    outline: 2px solid rgba(30, 64, 175, 0.2);
+    outline-offset: 1px;
+}
+
 .option-review-wrong {
-    border-color: rgba(185, 28, 28, 0.42);
-    background: linear-gradient(180deg, #fff1f2 0%, #ffe2e5 100%);
-    box-shadow: 0 14px 26px rgba(185, 28, 28, 0.14);
+    border-color: rgba(185, 28, 28, 0.58);
+    background: linear-gradient(180deg, #ffe7ea 0%, #ffcfd6 100%);
+    box-shadow: 0 16px 28px rgba(185, 28, 28, 0.18);
 }
 
 .option-review-correct {
-    border-color: rgba(22, 101, 52, 0.34);
-    background: linear-gradient(180deg, #eefbf2 0%, #dcf5e4 100%);
+    border-color: rgba(22, 101, 52, 0.5);
+    background: linear-gradient(180deg, #e7f9ed 0%, #cdefd8 100%);
+    box-shadow: 0 16px 28px rgba(22, 101, 52, 0.16);
 }
 
 .option-review-wrong .option-copy,
 .option-review-correct .option-copy {
     color: #0f172a;
     font-weight: 600;
+}
+
+.option-review-selected .option-marker {
+    box-shadow: inset 0 0 0 2px rgba(30, 64, 175, 0.18);
+}
+
+.option-review-wrong .option-marker {
+    background: linear-gradient(180deg, rgba(185, 28, 28, 0.18) 0%, rgba(185, 28, 28, 0.1) 100%);
+    color: #991b1b;
+    box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.16);
+}
+
+.option-review-correct .option-marker {
+    background: linear-gradient(180deg, rgba(22, 101, 52, 0.18) 0%, rgba(22, 101, 52, 0.1) 100%);
+    color: #166534;
+    box-shadow: inset 0 0 0 1px rgba(22, 101, 52, 0.16);
 }
 
 .option-copy {

@@ -140,7 +140,7 @@
                     {% for option in item.options %}
                     {% set is_selected = loop.index0 == item.selected_index %}
                     {% set is_correct = loop.index0 == item.correct_index %}
-                    <div class="option-review{% if is_selected and not is_correct %} option-review-wrong{% endif %}{% if is_correct %} option-review-correct{% endif %}">
+                    <div class="option-review{% if is_selected %} option-review-selected{% endif %}{% if is_selected and not is_correct %} option-review-wrong{% endif %}{% if is_correct %} option-review-correct{% endif %}">
                         <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
                         <span class="option-copy">{{ option.text }}</span>
                     </div>
