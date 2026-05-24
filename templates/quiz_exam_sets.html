@@ -32,10 +32,9 @@
             <h2>{{ exam.title }} sets</h2>
             {% for set_item in sets %}
             <article class="catalog-card compact-card quiz-set-card">
-                <div class="quiz-set-card-head quiz-set-card-mobile-head">
-                    <div>
-                        <h3 class="quiz-set-title-desktop">{{ set_item.title }}</h3>
-                        <button class="quiz-collapsible-toggle quiz-mobile-only" type="button" data-accordion-group="set-accordion" data-accordion-target="set-panel-{{ set_item.set_id }}">
+                <div class="quiz-set-card-head">
+                    <div class="quiz-set-title-block">
+                        <button class="quiz-collapsible-toggle quiz-collapsible-toggle-block{% if set_item.active_state %} is-open{% endif %}" type="button" data-accordion-group="set-accordion" data-accordion-target="set-panel-{{ set_item.set_id }}" aria-expanded="{% if set_item.active_state %}true{% else %}false{% endif %}">
                             {{ set_item.title }}
                         </button>
                         <p>{{ set_item.description or "Practice set" }}</p>
@@ -47,7 +46,7 @@
                     {% endif %}
                 </div>
 
-                <div class="quiz-collapsible-panel" id="set-panel-{{ set_item.set_id }}">
+                <div class="quiz-collapsible-panel{% if set_item.active_state %} is-open{% endif %}" id="set-panel-{{ set_item.set_id }}">
                     <div class="quiz-set-meta-grid">
                         <div class="quiz-meta-item">
                             <span>Total questions</span>
@@ -119,7 +118,7 @@
                         </form>
                     </div>
                     {% else %}
-                    <form accept-charset="UTF-8" method="post" class="quiz-set-form" data-disable-on-submit="true" data-quiz-start-form="true">
+                    <form accept-charset="UTF-8" method="post" class="quiz-set-form" data-disable-on-submit="true">
                         <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
                         <div class="quiz-set-action-bar">
                             <select name="question_count">
@@ -142,72 +141,10 @@
     </div>
 </section>
 
-<div class="quiz-rules-modal" id="quiz-rules-modal" hidden>
-    <div class="quiz-rules-dialog" role="dialog" aria-modal="true" aria-labelledby="quiz-rules-title">
-        <h2 id="quiz-rules-title">Quiz rules</h2>
-        <ul class="mini-list">
-            <li>Each correct answer gives +1 mark.</li>
-            <li>Each wrong answer deducts 0.25 mark.</li>
-            <li>Skipped or timed-out questions give 0 mark.</li>
-            <li>Use pause only when necessary and resume from the same set.</li>
-            <li>Your progress and ranking are saved after submission.</li>
-        </ul>
-        <div class="hero-actions">
-            <button class="button button-primary" type="button" id="quiz-rules-continue">Start Quiz</button>
-            <button class="button button-secondary" type="button" id="quiz-rules-cancel">Cancel</button>
-        </div>
-    </div>
-</div>
-
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-    var activeForm = null;
-    var modal = document.getElementById("quiz-rules-modal");
-    var continueButton = document.getElementById("quiz-rules-continue");
-    var cancelButton = document.getElementById("quiz-rules-cancel");
-    var mobileAccordionQuery = window.matchMedia("(max-width: 980px)");
-
-    Array.prototype.slice.call(document.querySelectorAll("[data-quiz-start-form='true']")).forEach(function (form) {
-        form.addEventListener("submit", function (event) {
-            if (form.dataset.rulesConfirmed === "true") {
-                return;
-            }
-            event.preventDefault();
-            activeForm = form;
-            if (modal) {
-                modal.hidden = false;
-                document.body.classList.add("modal-open");
-            }
-        });
-    });
-
-    function submitActiveForm() {
-        if (!activeForm) {
-            return;
-        }
-        Array.prototype.slice.call(activeForm.querySelectorAll("button, input[type='submit']")).forEach(function (button) {
-            button.disabled = true;
-        });
-        activeForm.submit();
-    }
-
-    function clearDesktopAccordionState() {
-        if (mobileAccordionQuery.matches) {
-            return;
-        }
-        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
-            button.classList.remove("is-open");
-        });
-        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-panel")).forEach(function (panel) {
-            panel.classList.remove("is-open");
-        });
-    }
-
     Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
         button.addEventListener("click", function () {
-            if (!mobileAccordionQuery.matches) {
-                return;
-            }
             var group = button.getAttribute("data-accordion-group");
             var targetId = button.getAttribute("data-accordion-target");
             var target = document.getElementById(targetId);
@@ -220,41 +157,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
                 peer.classList.remove("is-open");
+                peer.setAttribute("aria-expanded", "false");
                 peerTarget.classList.remove("is-open");
             });
             button.classList.toggle("is-open");
             target.classList.toggle("is-open");
+            button.setAttribute("aria-expanded", button.classList.contains("is-open") ? "true" : "false");
         });
     });
-
-    clearDesktopAccordionState();
-    if (typeof mobileAccordionQuery.addEventListener === "function") {
-        mobileAccordionQuery.addEventListener("change", clearDesktopAccordionState);
-    } else if (typeof mobileAccordionQuery.addListener === "function") {
-        mobileAccordionQuery.addListener(clearDesktopAccordionState);
-    }
-
-    if (continueButton) {
-        continueButton.addEventListener("click", function () {
-            if (!activeForm) {
-                return;
-            }
-            activeForm.dataset.rulesConfirmed = "true";
-            modal.hidden = true;
-            document.body.classList.remove("modal-open");
-            submitActiveForm();
-        });
-    }
-
-    if (cancelButton) {
-        cancelButton.addEventListener("click", function () {
-            if (modal) {
-                modal.hidden = true;
-            }
-            document.body.classList.remove("modal-open");
-            activeForm = null;
-        });
-    }
 });
 </script>
 {% endblock %}

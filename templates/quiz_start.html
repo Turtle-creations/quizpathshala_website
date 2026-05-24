@@ -21,12 +21,12 @@
         </div>
         <div class="form-card">
             <h2>Available exams</h2>
-            <div class="quiz-exam-grid quiz-desktop-only">
+            <div class="quiz-exam-grid">
                 {% for exam in exams %}
                 <article class="catalog-card compact-card quiz-exam-card">
                     <div class="quiz-exam-card-body">
                         <div>
-                            <h3>{{ exam.title }}</h3>
+                            <a class="quiz-title-link" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">{{ exam.title }}</a>
                             <p>{{ exam.description or "Exam practice category" }}</p>
                         </div>
                         <div class="quiz-meta-grid">
@@ -40,49 +40,6 @@
                             </div>
                         </div>
                     </div>
-                    <div class="quiz-exam-card-footer">
-                        <a class="button button-primary button-small quiz-open-button" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">Open Sets</a>
-                    </div>
-                </article>
-                {% else %}
-                <p>No quiz categories are available yet.</p>
-                {% endfor %}
-            </div>
-            <div class="quiz-mobile-accordion">
-                {% for exam in exam_catalog %}
-                <article class="catalog-card compact-card quiz-exam-card quiz-exam-card-mobile">
-                    <button class="quiz-collapsible-toggle quiz-collapsible-toggle-block" type="button" data-accordion-group="exam-accordion" data-accordion-target="exam-panel-{{ exam.exam_id }}">
-                        {{ exam.title }}
-                    </button>
-                    <div class="quiz-collapsible-panel" id="exam-panel-{{ exam.exam_id }}">
-                        <p>{{ exam.description or "Exam practice category" }}</p>
-                        <div class="quiz-meta-grid">
-                            <div class="quiz-meta-item">
-                                <span>Sets</span>
-                                <strong>{{ exam.set_count }}</strong>
-                            </div>
-                            <div class="quiz-meta-item">
-                                <span>Total questions</span>
-                                <strong>{{ exam.question_count or 0 }}</strong>
-                            </div>
-                        </div>
-                        <div class="quiz-mobile-set-list">
-                            {% for set_item in exam.sets %}
-                            <article class="quiz-mobile-set-item">
-                                <button class="quiz-collapsible-toggle quiz-collapsible-toggle-inline" type="button" data-accordion-group="set-accordion-{{ exam.exam_id }}" data-accordion-target="set-panel-{{ exam.exam_id }}-{{ set_item.set_id }}">
-                                    {{ set_item.title }}
-                                </button>
-                                <div class="quiz-collapsible-panel" id="set-panel-{{ exam.exam_id }}-{{ set_item.set_id }}">
-                                    <p>{{ set_item.description or "Practice set" }}</p>
-                                    <p class="helper-text">{{ set_item.question_count or 0 }} questions{% if set_item.locked and not set_item.has_access %} | Premium only{% endif %}</p>
-                                    <a class="button button-primary button-small" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">Open Set</a>
-                                </div>
-                            </article>
-                            {% else %}
-                            <p>No sets are available for this exam yet.</p>
-                            {% endfor %}
-                        </div>
-                    </div>
                 </article>
                 {% else %}
                 <p>No quiz categories are available yet.</p>
@@ -91,52 +48,4 @@
         </div>
     </div>
 </section>
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    var mobileAccordionQuery = window.matchMedia("(max-width: 980px)");
-
-    function clearDesktopAccordionState() {
-        if (mobileAccordionQuery.matches) {
-            return;
-        }
-        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
-            button.classList.remove("is-open");
-        });
-        Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-panel")).forEach(function (panel) {
-            panel.classList.remove("is-open");
-        });
-    }
-
-    Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
-        button.addEventListener("click", function () {
-            if (!mobileAccordionQuery.matches) {
-                return;
-            }
-            var group = button.getAttribute("data-accordion-group");
-            var targetId = button.getAttribute("data-accordion-target");
-            var target = document.getElementById(targetId);
-            if (!target) {
-                return;
-            }
-            Array.prototype.slice.call(document.querySelectorAll("[data-accordion-group='" + group + "']")).forEach(function (peer) {
-                var peerTarget = document.getElementById(peer.getAttribute("data-accordion-target"));
-                if (!peerTarget || peer === button) {
-                    return;
-                }
-                peer.classList.remove("is-open");
-                peerTarget.classList.remove("is-open");
-            });
-            button.classList.toggle("is-open");
-            target.classList.toggle("is-open");
-        });
-    });
-
-    clearDesktopAccordionState();
-    if (typeof mobileAccordionQuery.addEventListener === "function") {
-        mobileAccordionQuery.addEventListener("change", clearDesktopAccordionState);
-    } else if (typeof mobileAccordionQuery.addListener === "function") {
-        mobileAccordionQuery.addListener(clearDesktopAccordionState);
-    }
-});
-</script>
 {% endblock %}

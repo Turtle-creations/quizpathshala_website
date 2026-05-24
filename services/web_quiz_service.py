@@ -121,6 +121,7 @@ class WebQuizService:
             "is_paused": False,
             "paused_at": None,
             "paused_remaining_seconds": None,
+            "max_breaks": int(settings.get("max_breaks") or 0),
         }
         self._persist_session(user_id)
         self.logger.info(
@@ -200,8 +201,8 @@ class WebQuizService:
             "pause_count": int(quiz_session.get("pause_count") or 0),
             "is_paused": bool(quiz_session.get("is_paused")),
             "allow_resume": bool(settings.get("allow_resume", True)),
-            "max_breaks": int(settings.get("max_breaks") or 0),
-            "too_many_breaks": self.has_exceeded_break_limit(quiz_session),
+            "max_breaks": int(quiz_session.get("max_breaks") or settings.get("max_breaks") or 0),
+            "too_many_breaks": self.has_exceeded_break_limit(quiz_session, max_breaks=int(quiz_session.get("max_breaks") or settings.get("max_breaks") or 0)),
         }
 
     def get_current_question(self, user_id: int) -> dict | None:
@@ -238,10 +239,12 @@ class WebQuizService:
         session["paused_at"] = self._timestamp_now()
         session["paused_remaining_seconds"] = self.remaining_seconds(user_id)
         self._persist_session(user_id)
+        max_breaks = int(session.get("max_breaks") or settings.get("max_breaks") or 0)
+        session["max_breaks"] = max_breaks
         return {
             "ok": True,
             "pause_count": int(session.get("pause_count") or 0),
-            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session) else None,
+            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session, max_breaks=max_breaks) else None,
         }
 
     def resume_quiz(self, user_id: int, set_id: int | None = None) -> dict | None:
@@ -264,9 +267,11 @@ class WebQuizService:
         session["paused_at"] = None
         session["paused_remaining_seconds"] = None
         self._persist_session(user_id)
+        max_breaks = int(session.get("max_breaks") or quiz_settings_service.get_settings().get("max_breaks") or 0)
+        session["max_breaks"] = max_breaks
         return {
             "ok": True,
-            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session) else None,
+            "warning": self.BREAK_WARNING_MESSAGE if self.has_exceeded_break_limit(session, max_breaks=max_breaks) else None,
         }
 
     def answer_question(self, user_id: int, selected_index: int | None, action: str = "answer") -> dict | None:
@@ -536,11 +541,13 @@ class WebQuizService:
             ).fetchone()
         return int((row["count"] if row else 0) or 0)
 
-    def has_exceeded_break_limit(self, session: dict | None) -> bool:
+    def has_exceeded_break_limit(self, session: dict | None, *, max_breaks: int | None = None) -> bool:
         if not session:
             return False
-        max_breaks = int(quiz_settings_service.get_settings().get("max_breaks") or 0)
-        return int(session.get("pause_count") or 0) > max_breaks
+        resolved_max_breaks = max_breaks
+        if resolved_max_breaks is None:
+            resolved_max_breaks = int(session.get("max_breaks") or 0)
+        return int(session.get("pause_count") or 0) > int(resolved_max_breaks or 0)
 
     def leaderboard_for_set(self, set_id: int, *, current_user_id: int | None = None) -> dict:
         with database.connection() as conn:
@@ -740,6 +747,7 @@ class WebQuizService:
                     if payload.get("paused_remaining_seconds") is not None
                     else None
                 ),
+                "max_breaks": int(payload.get("max_breaks") or 0),
             }
         except (TypeError, ValueError):
             return None

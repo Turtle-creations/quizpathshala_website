@@ -1227,18 +1227,6 @@ body.quiz-sidebar-open {
     gap: 1rem;
 }
 
-.quiz-desktop-only {
-    display: grid;
-}
-
-.quiz-mobile-accordion {
-    display: none;
-}
-
-.quiz-mobile-only {
-    display: none;
-}
-
 .quiz-exam-card,
 .quiz-set-card {
     display: grid;
@@ -1306,12 +1294,14 @@ body.quiz-sidebar-open {
     align-items: flex-start;
 }
 
-.quiz-set-title-desktop {
-    display: block;
+.quiz-set-title-block {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
 }
 
 .quiz-collapsible-toggle {
-    display: none;
+    display: block;
     width: 100%;
     border: 0;
     padding: 0;
@@ -1328,49 +1318,33 @@ body.quiz-sidebar-open {
     padding: 0.2rem 0;
 }
 
+.quiz-title-link,
+.quiz-collapsible-toggle {
+    color: var(--text);
+    font-family: var(--font-heading);
+    font-size: 1.22rem;
+    font-weight: 700;
+    line-height: 1.35;
+    text-decoration: none;
+}
+
+.quiz-title-link:hover,
+.quiz-title-link:focus-visible,
+.quiz-collapsible-toggle:hover,
+.quiz-collapsible-toggle:focus-visible {
+    color: var(--accent-dark);
+}
+
 .quiz-collapsible-panel {
-    display: block;
-}
-
-.quiz-mobile-set-list {
-    display: grid;
-    gap: 0.85rem;
-}
-
-.quiz-mobile-set-item {
-    padding-top: 0.5rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.quiz-rules-modal {
-    position: fixed;
-    inset: 0;
-    z-index: 120;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.2rem;
-    background: rgba(15, 23, 42, 0.48);
-}
-
-.quiz-rules-modal[hidden] {
     display: none;
-}
-
-.quiz-rules-dialog {
-    width: min(540px, 100%);
-    padding: 1.5rem;
-    border-radius: var(--radius-lg);
-    background: #ffffff;
-    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
 }
 
 .leaderboard-row-current {
     background: rgba(37, 99, 235, 0.08);
 }
 
-body.modal-open {
-    overflow: hidden;
+.quiz-collapsible-panel.is-open {
+    display: block;
 }
 
 .quiz-set-form {
@@ -1394,35 +1368,6 @@ body.modal-open {
     .quiz-set-meta-grid,
     .quiz-meta-grid {
         grid-template-columns: 1fr;
-    }
-
-    .quiz-desktop-only {
-        display: none;
-    }
-
-    .quiz-mobile-accordion {
-        display: grid;
-        gap: 1rem;
-    }
-
-    .quiz-mobile-only {
-        display: block;
-    }
-
-    .quiz-set-title-desktop {
-        display: none;
-    }
-
-    .quiz-collapsible-toggle {
-        display: block;
-    }
-
-    .quiz-collapsible-panel {
-        display: none;
-    }
-
-    .quiz-collapsible-panel.is-open {
-        display: block;
     }
 }
 
