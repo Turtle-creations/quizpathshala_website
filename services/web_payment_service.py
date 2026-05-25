@@ -22,6 +22,7 @@ class WebPaymentService:
         if normalized_plan_type not in {"week_1", "month_1", "months_3"}:
             raise ValueError("Invalid premium plan selected.")
 
+        payment_service.validate_test_mode()
         missing = payment_service.get_missing_configuration()
         if missing:
             raise ValueError(f"Missing required payment env vars: {', '.join(missing)}")

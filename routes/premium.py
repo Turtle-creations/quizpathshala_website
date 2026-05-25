@@ -93,6 +93,10 @@ def payment_success():
             payment_id=payment_id,
             signature=signature,
         )
+        if verified:
+            order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_verified")
+        else:
+            order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_signature_failed")
     return render_template(
         "payment_status.html",
         page_title="Payment Received",

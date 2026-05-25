@@ -9,6 +9,7 @@ import httpx
 
 from config import (
     BOT_USERNAME,
+    PAYMENT_MODE,
     PUBLIC_BASE_URL,
     RAZORPAY_KEY_ID,
     RAZORPAY_KEY_SECRET,
@@ -41,6 +42,16 @@ PREMIUM_ACTIVATION_SOURCE_WEBHOOK = "razorpay_webhook"
 
 
 class PaymentService:
+    def is_test_mode(self) -> bool:
+        return PAYMENT_MODE == "test"
+
+    def validate_test_mode(self) -> None:
+        if not self.is_test_mode():
+            raise ValueError(
+                f"Payment mode '{PAYMENT_MODE or 'disabled'}' is not allowed. "
+                "Set PAYMENT_MODE=test to use the test payment environment."
+            )
+
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
 
@@ -299,12 +310,14 @@ class PaymentService:
     def get_missing_configuration(self) -> list[str]:
         missing = []
 
+        if not self.is_test_mode():
+            missing.append("PAYMENT_MODE=test")
         if not (RAZORPAY_KEY_ID or "").strip():
             missing.append("RAZORPAY_KEY_ID")
         if not (RAZORPAY_KEY_SECRET or "").strip():
             missing.append("RAZORPAY_KEY_SECRET")
         if not (RAZORPAY_WEBHOOK_SECRET or "").strip():
-            missing.append("RAZORPAY_WEBHOOK_SECRET")
+            missing.append("PAYMENT_WEBHOOK_SECRET")
         if not (os.getenv("PUBLIC_BASE_URL", "") or "").strip():
             missing.append("PUBLIC_BASE_URL")
         if not (BOT_USERNAME or "").strip() or (BOT_USERNAME or "").strip() == "YOUR_BOT_USERNAME":
@@ -339,6 +352,7 @@ class PaymentService:
         if plan_type not in SUBSCRIPTION_PLANS:
             raise ValueError("Invalid plan selected")
 
+        self.validate_test_mode()
         missing = self.get_missing_configuration()
         if missing:
             raise ValueError(f"Missing required payment env vars: {', '.join(missing)}")
@@ -386,6 +400,7 @@ class PaymentService:
         }
 
     async def create_test_order(self, user_id: int) -> dict:
+        self.validate_test_mode()
         if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
             raise ValueError("Razorpay credentials are not configured")
 
