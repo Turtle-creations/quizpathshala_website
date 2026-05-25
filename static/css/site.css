@@ -1405,7 +1405,6 @@ body.quiz-sidebar-open {
 
 .quiz-hierarchy-link,
 .quiz-subexam-link {
-    color: #2563eb;
     font-family: var(--font-heading);
     font-weight: 600;
     cursor: pointer;
@@ -1413,6 +1412,7 @@ body.quiz-sidebar-open {
 }
 
 .quiz-hierarchy-link {
+    color: #2563eb;
     font-size: 1.12rem;
     line-height: 1.35;
 }
@@ -1425,6 +1425,7 @@ body.quiz-sidebar-open {
 }
 
 .quiz-subexam-link {
+    color: #c6d67c;
     font-size: 1.02rem;
     line-height: 1.45;
 }
@@ -1467,6 +1468,14 @@ body.quiz-sidebar-open {
 .quiz-collapsible-toggle:hover,
 .quiz-collapsible-toggle:focus-visible {
     color: #1d4ed8;
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.16em;
+}
+
+.quiz-subexam-link:hover,
+.quiz-subexam-link:focus-visible {
+    color: #aab85f;
     text-decoration: underline;
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.16em;

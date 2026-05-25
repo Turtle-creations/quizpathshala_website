@@ -115,22 +115,47 @@ class PaymentEnvironmentTests(unittest.TestCase):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-create@example.com")
         response_payload = self._order_response(
             order_id="order_test_create_001",
-            amount=29900,
+            amount=9900,
             user_id=int(user["user_id"]),
-            plan_type="month_1",
+            plan_type="week_1",
         )
 
         with mock.patch(
             "services.web_payment_service.httpx.Client",
             side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
         ):
-            order = web_payment_service.create_order(int(user["user_id"]), "month_1")
+            order = web_payment_service.create_order(int(user["user_id"]), "week_1")
 
         self.assertEqual(order["order_id"], "order_test_create_001")
         saved_order = payment_service.get_order("order_test_create_001")
         self.assertIsNotNone(saved_order)
         self.assertEqual(saved_order["status"], "created")
-        self.assertEqual(saved_order["plan_type"], "month_1")
+        self.assertEqual(saved_order["plan_type"], "week_1")
+
+    def test_payment_order_upsert_updates_existing_row(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-upsert@example.com")
+        payment_service._save_order_record(
+            order_id="order_test_upsert_001",
+            user_id=int(user["user_id"]),
+            plan_type="week_1",
+            amount=9900,
+            currency="INR",
+            status="created",
+            payment_url="/payment/order_test_upsert_001",
+        )
+        payment_service._save_order_record(
+            order_id="order_test_upsert_001",
+            user_id=int(user["user_id"]),
+            plan_type="week_1",
+            amount=9900,
+            currency="INR",
+            status="callback_verified",
+            payment_url="/payment/order_test_upsert_001",
+        )
+
+        saved_order = payment_service.get_order("order_test_upsert_001")
+        self.assertIsNotNone(saved_order)
+        self.assertEqual(saved_order["status"], "callback_verified")
 
     def test_premium_page_enables_checkout_in_test_mode_with_checkout_keys(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-premium-page@example.com")
