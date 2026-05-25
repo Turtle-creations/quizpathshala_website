@@ -1300,8 +1300,14 @@ body.quiz-sidebar-open {
     gap: 1rem;
 }
 
+.quiz-hierarchy-list {
+    display: grid;
+    gap: 1rem;
+}
+
 .quiz-exam-card,
-.quiz-set-card {
+.quiz-set-card,
+.quiz-hierarchy-card {
     display: grid;
     gap: 1rem;
 }
@@ -1318,6 +1324,16 @@ body.quiz-sidebar-open {
 .quiz-exam-card-body {
     display: grid;
     gap: 1rem;
+}
+
+.quiz-hierarchy-card {
+    padding: 1.35rem 1.45rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 32%),
+        linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: var(--shadow);
 }
 
 .quiz-exam-card-footer {
@@ -1371,6 +1387,74 @@ body.quiz-sidebar-open {
     display: grid;
     gap: 0.35rem;
     min-width: 0;
+}
+
+.quiz-hierarchy-toggle {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+}
+
+.quiz-hierarchy-heading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.quiz-hierarchy-heading::before {
+    content: "";
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%);
+    box-shadow: 0 0 0 0.24rem rgba(37, 99, 235, 0.1);
+    flex-shrink: 0;
+}
+
+.quiz-hierarchy-count {
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.quiz-hierarchy-panel {
+    display: none;
+    padding-top: 0.2rem;
+}
+
+.quiz-subexam-list {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.quiz-subexam-item {
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.quiz-subexam-item:first-child {
+    padding-top: 0.25rem;
+    border-top: 0;
+}
+
+.quiz-subexam-link {
+    font-size: 1.02rem;
+}
+
+.quiz-subexam-item p {
+    margin: 0.3rem 0 0;
+}
+
+.quiz-subexam-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.88rem;
+    color: var(--muted);
 }
 
 .quiz-collapsible-toggle {
@@ -1461,6 +1545,15 @@ body.quiz-sidebar-open {
 }
 
 @media (max-width: 640px) {
+    .quiz-hierarchy-card {
+        padding: 1.1rem 1rem;
+    }
+
+    .quiz-hierarchy-toggle {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
     .quiz-set-card-head,
     .quiz-set-action-bar {
         flex-direction: column;
