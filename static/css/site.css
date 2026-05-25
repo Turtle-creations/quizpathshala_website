@@ -1419,8 +1419,8 @@ body.quiz-sidebar-open {
 
 .quiz-hierarchy-panel {
     display: none;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 0.75rem 1.2rem;
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
     padding-left: 0;
 }
 
