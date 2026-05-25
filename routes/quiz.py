@@ -15,16 +15,6 @@ from services.web_quiz_service import web_quiz_service
 
 quiz_blueprint = Blueprint("quiz", __name__)
 logger = get_logger(__name__)
-SSC_SUB_EXAM_KEYWORDS = (
-    "CHSL",
-    "CGL",
-    "CPO",
-    "MTS",
-    "JE",
-    "GD",
-    "STENO",
-    "SELECTION POST",
-)
 
 
 def _quiz_session_snapshot() -> dict:
@@ -198,66 +188,6 @@ def _progress_text(latest_attempt: dict | None, active_state: dict | None) -> st
     return "Not attempted yet"
 
 
-def _normalize_whitespace(value: str) -> str:
-    return " ".join(str(value or "").split())
-
-
-def _infer_exam_hierarchy(title: str) -> tuple[str, str]:
-    cleaned_title = _normalize_whitespace(title)
-    normalized_title = cleaned_title.upper()
-    if normalized_title == "SSC":
-        return "SSC", "SSC"
-    if normalized_title.startswith("SSC "):
-        return "SSC", cleaned_title
-    for keyword in SSC_SUB_EXAM_KEYWORDS:
-        if normalized_title == keyword or normalized_title.startswith(f"{keyword} "):
-            return "SSC", f"SSC {cleaned_title}"
-    if normalized_title.startswith("RRB ") or "RAILWAY" in normalized_title:
-        return "Railway", cleaned_title
-    if not cleaned_title:
-        return "Other", "Other"
-    first_word = cleaned_title.split(" ", 1)[0]
-    return first_word, cleaned_title
-
-
-def _build_exam_hierarchy(exams: list[dict]) -> list[dict]:
-    category_map: dict[str, dict] = {}
-    for exam in exams:
-        category_title, sub_exam_title = _infer_exam_hierarchy(str(exam.get("title") or ""))
-        bucket = category_map.setdefault(
-            category_title,
-            {
-                "title": category_title,
-                "set_count": 0,
-                "question_count": 0,
-                "sub_exams": [],
-            },
-        )
-        bucket["set_count"] += int(exam.get("set_count") or 0)
-        bucket["question_count"] += int(exam.get("question_count") or 0)
-        bucket["sub_exams"].append(
-            {
-                **dict(exam),
-                "sub_exam_title": sub_exam_title,
-                "summary_text": (
-                    exam.get("description")
-                    or f"{int(exam.get('set_count') or 0)} sets ready in {sub_exam_title}."
-                ),
-            }
-        )
-
-    hierarchy = sorted(category_map.values(), key=lambda item: item["title"].upper())
-    for category in hierarchy:
-        category["sub_exams"] = sorted(
-            category["sub_exams"],
-            key=lambda item: (
-                0 if item["sub_exam_title"].upper() == category["title"].upper() else 1,
-                item["sub_exam_title"].upper(),
-            ),
-        )
-    return hierarchy
-
-
 def _start_selected_set(
     user_id: int,
     *,
@@ -308,7 +238,7 @@ def quiz_start():
         )
 
     exams = [dict(item) for item in exam_service.get_exams()]
-    exam_hierarchy = _build_exam_hierarchy(exams)
+    exam_hierarchy = exam_service.list_exam_hierarchy()
     exam_catalog = web_quiz_service.list_exam_catalog(user_id)
     return render_template(
         "quiz_start.html",

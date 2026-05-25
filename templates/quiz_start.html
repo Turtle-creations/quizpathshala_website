@@ -5,7 +5,7 @@
     <div class="container narrow">
         <span class="eyebrow">Quiz Hub</span>
         <h1>Select your exam</h1>
-        <p>Open a category first, choose the sub-exam you want, and then continue into its sets without changing the quiz start or play flow.</p>
+        <p>Choose a category, then a sub-exam, and then continue into sets in the same quiz flow.</p>
     </div>
 </section>
 
@@ -14,7 +14,7 @@
         <div class="text-page">
             <h2>How this works</h2>
             <p>Every quiz follows the same QuizPathshala scoring model: +1 for correct answers, -0.25 for wrong answers, and a countdown for each question.</p>
-            <p>Categories stay compact here. Sets only open after you choose a specific sub-exam.</p>
+            <p>The hierarchy is now fully managed from admin. Users only see a clean navigation list here.</p>
             <div class="hero-actions">
                 <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">See Premium Plans</a>
             </div>
@@ -23,36 +23,16 @@
             <h2>Available exams</h2>
             <div class="quiz-hierarchy-list">
                 {% for category in exam_hierarchy %}
-                <article class="catalog-card compact-card quiz-hierarchy-card">
-                    <button class="quiz-collapsible-toggle quiz-hierarchy-toggle" type="button" data-accordion-group="quiz-category-accordion" data-accordion-target="quiz-category-panel-{{ loop.index }}" aria-expanded="false">
-                        <span class="quiz-hierarchy-heading">{{ category.title }}</span>
-                        <span class="quiz-hierarchy-count">{{ category.sub_exams|length }} sub-exams</span>
-                    </button>
-                    <div class="quiz-collapsible-panel quiz-hierarchy-panel" id="quiz-category-panel-{{ loop.index }}">
-                        <div class="quiz-meta-grid">
-                            <div class="quiz-meta-item">
-                                <span>Sub-exams</span>
-                                <strong>{{ category.sub_exams|length }}</strong>
-                            </div>
-                            <div class="quiz-meta-item">
-                                <span>Total sets</span>
-                                <strong>{{ category.set_count }}</strong>
-                            </div>
-                        </div>
-                        <div class="quiz-subexam-list">
-                            {% for exam in category.sub_exams %}
-                            <article class="quiz-subexam-item">
-                                <a class="quiz-title-link quiz-subexam-link" href="{{ url_for('quiz.exam_sets', exam_id=exam.exam_id) }}">{{ exam.sub_exam_title }}</a>
-                                <p>{{ exam.summary_text }}</p>
-                                <div class="quiz-subexam-stats">
-                                    <span>{{ exam.set_count }} sets</span>
-                                    <span>{{ exam.question_count or 0 }} questions</span>
-                                </div>
-                            </article>
-                            {% endfor %}
-                        </div>
+                <div class="quiz-hierarchy-item">
+                    <a class="quiz-hierarchy-link" href="#quiz-category-panel-{{ category.category_id }}" data-accordion-group="quiz-category-accordion" data-accordion-target="quiz-category-panel-{{ category.category_id }}" aria-expanded="false">{{ category.name }}</a>
+                    <div class="quiz-collapsible-panel quiz-hierarchy-panel" id="quiz-category-panel-{{ category.category_id }}">
+                        {% for sub_exam in category.sub_exams %}
+                        <a class="quiz-title-link quiz-subexam-link" href="{{ url_for('quiz.exam_sets', exam_id=sub_exam.exam_id) }}">{{ sub_exam.name }}</a>
+                        {% else %}
+                        <p class="helper-text">No sub-exams available.</p>
+                        {% endfor %}
                     </div>
-                </article>
+                </div>
                 {% else %}
                 <p>No quiz categories are available yet.</p>
                 {% endfor %}
@@ -63,26 +43,27 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-    Array.prototype.slice.call(document.querySelectorAll(".quiz-collapsible-toggle")).forEach(function (button) {
-        button.addEventListener("click", function () {
-            var group = button.getAttribute("data-accordion-group");
-            var targetId = button.getAttribute("data-accordion-target");
+    Array.prototype.slice.call(document.querySelectorAll("[data-accordion-target]")).forEach(function (link) {
+        link.addEventListener("click", function (event) {
+            event.preventDefault();
+            var group = link.getAttribute("data-accordion-group");
+            var targetId = link.getAttribute("data-accordion-target");
             var target = document.getElementById(targetId);
             if (!target) {
                 return;
             }
             Array.prototype.slice.call(document.querySelectorAll("[data-accordion-group='" + group + "']")).forEach(function (peer) {
                 var peerTarget = document.getElementById(peer.getAttribute("data-accordion-target"));
-                if (!peerTarget || peer === button) {
+                if (!peerTarget || peer === link) {
                     return;
                 }
                 peer.classList.remove("is-open");
                 peer.setAttribute("aria-expanded", "false");
                 peerTarget.classList.remove("is-open");
             });
-            button.classList.toggle("is-open");
+            link.classList.toggle("is-open");
             target.classList.toggle("is-open");
-            button.setAttribute("aria-expanded", button.classList.contains("is-open") ? "true" : "false");
+            link.setAttribute("aria-expanded", link.classList.contains("is-open") ? "true" : "false");
         });
     });
 });

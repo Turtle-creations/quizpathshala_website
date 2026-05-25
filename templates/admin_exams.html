@@ -4,8 +4,8 @@
 <section class="page-hero">
     <div class="container">
         <span class="eyebrow">Exam Manager</span>
-        <h1>All exams</h1>
-        <p>Every exam is visible here with no pagination. Open any exam to manage sets and questions.</p>
+        <h1>Categories and sub-exams</h1>
+        <p>Manage the quiz hierarchy here. Sets stay connected to each sub-exam through the existing set manager.</p>
         <div class="hero-actions">
             <a class="button button-secondary" href="{{ url_for('admin.admin_dashboard') }}">Back to dashboard</a>
         </div>
@@ -15,43 +15,103 @@
 <section class="section">
     <div class="container admin-grid">
         <div class="form-card">
-            <h2>Add exam</h2>
+            <h2>Add category</h2>
             <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
-                <input type="hidden" name="action" value="add_exam">
-                <label for="exam_title">Exam title</label>
-                <input id="exam_title" name="title" type="text" placeholder="SSC CGL">
-                <label for="exam_description">Description</label>
-                <textarea id="exam_description" name="description" rows="3"></textarea>
-                <button class="button button-primary" type="submit">Create Exam</button>
+                <input type="hidden" name="action" value="save_category">
+                <label for="category_name">Category name</label>
+                <input id="category_name" name="name" type="text" placeholder="SSC">
+                <button class="button button-primary" type="submit">Create Category</button>
             </form>
         </div>
 
+        <div class="form-card">
+            <h2>Add sub-exam</h2>
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <input type="hidden" name="action" value="save_sub_exam">
+                <label for="sub_exam_name">Sub-exam name</label>
+                <input id="sub_exam_name" name="name" type="text" placeholder="SSC GD">
+                <label for="sub_exam_category_id">Category</label>
+                <select id="sub_exam_category_id" name="category_id">
+                    {% for category in categories %}
+                    <option value="{{ category.category_id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+                <button class="button button-primary" type="submit">Create Sub-exam</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
         <div class="data-card">
-            <h2>All exams</h2>
+            <h2>Categories</h2>
             <table>
-                <thead><tr><th>Exam</th><th>Sets</th><th>Questions</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Name</th><th>Actions</th></tr></thead>
                 <tbody>
-                    {% for exam in exams %}
+                    {% for category in categories %}
                     <tr>
                         <td>
-                            <strong>{{ exam.title }}</strong><br>
-                            <span class="helper-text">{{ exam.description or 'No description' }}</span>
+                            <form class="compact-toolbar" method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                                <input type="hidden" name="action" value="save_category">
+                                <input type="hidden" name="category_id" value="{{ category.category_id }}">
+                                <input name="name" type="text" value="{{ category.name }}">
+                                <button class="button button-secondary" type="submit">Save</button>
+                            </form>
                         </td>
-                        <td>{{ exam.set_count }}</td>
-                        <td>{{ exam.question_count }}</td>
+                        <td>
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this category and every sub-exam, set, and question inside it?">
+                                <input type="hidden" name="action" value="delete_category">
+                                <input type="hidden" name="category_id" value="{{ category.category_id }}">
+                                <button class="button button-secondary" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="2">No categories found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Sub-exams</h2>
+            <table>
+                <thead><tr><th>Sub-exam</th><th>Current category</th><th>Actions</th></tr></thead>
+                <tbody>
+                    {% for sub_exam in sub_exams %}
+                    <tr>
+                        <td>
+                            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                                <input type="hidden" name="action" value="save_sub_exam">
+                                <input type="hidden" name="sub_exam_id" value="{{ sub_exam.sub_exam_id }}">
+                                <input name="name" type="text" value="{{ sub_exam.name }}">
+                                <select name="category_id">
+                                    {% for category in categories %}
+                                    <option value="{{ category.category_id }}" {% if category.category_id == sub_exam.category_id %}selected{% endif %}>{{ category.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="table-actions">
+                                    <button class="button button-secondary" type="submit">Save</button>
+                                </div>
+                            </form>
+                        </td>
+                        <td>{{ sub_exam.category_name }}</td>
                         <td>
                             <div class="table-actions">
-                                <a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=exam.exam_id) }}">Open Sets</a>
-                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this exam and all its sets/questions?">
-                                    <input type="hidden" name="action" value="delete_exam">
-                                    <input type="hidden" name="exam_id" value="{{ exam.exam_id }}">
+                                {% if sub_exam.exam_id %}
+                                <a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=sub_exam.exam_id) }}">Open Sets</a>
+                                {% endif %}
+                                <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-confirm="Delete this sub-exam and all of its sets/questions?">
+                                    <input type="hidden" name="action" value="delete_sub_exam">
+                                    <input type="hidden" name="sub_exam_id" value="{{ sub_exam.sub_exam_id }}">
                                     <button class="button button-secondary" type="submit">Delete</button>
                                 </form>
                             </div>
                         </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">No exams found.</td></tr>
+                    <tr><td colspan="3">No sub-exams found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

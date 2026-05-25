@@ -594,12 +594,40 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
             if not updated:
                 raise ValueError("Plan not found.")
             flash("Plan status updated successfully.", "success")
-        elif action == "add_exam":
-            web_admin_service.add_exam(
-                request.form.get("title", ""),
-                request.form.get("description") or None,
-            )
-            flash("Exam added successfully.", "success")
+        elif action == "save_category":
+            category_id = int(request.form.get("category_id", "0") or "0")
+            if category_id:
+                updated_category = web_admin_service.update_category(category_id, request.form.get("name", ""))
+                if not updated_category:
+                    raise ValueError("Category not found.")
+                flash("Category updated successfully.", "success")
+            else:
+                web_admin_service.add_category(request.form.get("name", ""))
+                flash("Category added successfully.", "success")
+        elif action == "delete_category":
+            web_admin_service.delete_category(int(request.form.get("category_id", "0")))
+            flash("Category deleted successfully.", "success")
+        elif action == "save_sub_exam":
+            sub_exam_id = int(request.form.get("sub_exam_id", "0") or "0")
+            category_id = int(request.form.get("category_id", "0") or "0")
+            if sub_exam_id:
+                updated_sub_exam = web_admin_service.update_sub_exam(
+                    sub_exam_id,
+                    request.form.get("name", ""),
+                    category_id,
+                )
+                if not updated_sub_exam:
+                    raise ValueError("Sub-exam not found.")
+                flash("Sub-exam updated successfully.", "success")
+            else:
+                web_admin_service.add_sub_exam(
+                    request.form.get("name", ""),
+                    category_id,
+                )
+                flash("Sub-exam added successfully.", "success")
+        elif action == "delete_sub_exam":
+            web_admin_service.delete_sub_exam(int(request.form.get("sub_exam_id", "0")))
+            flash("Sub-exam deleted successfully.", "success")
         elif action == "add_set":
             web_admin_service.add_set(
                 exam_id=int(request.form.get("exam_id", "0")),
@@ -810,6 +838,8 @@ def admin_exams():
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=True,
         current_user=current_user,
+        categories=web_admin_service.list_categories(),
+        sub_exams=web_admin_service.list_sub_exams(),
         exams=web_admin_service.list_exams_overview(),
     )
 

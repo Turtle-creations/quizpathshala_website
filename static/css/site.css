@@ -1302,7 +1302,7 @@ body.quiz-sidebar-open {
 
 .quiz-hierarchy-list {
     display: grid;
-    gap: 1rem;
+    gap: 0.9rem;
 }
 
 .quiz-exam-card,
@@ -1334,6 +1334,11 @@ body.quiz-sidebar-open {
         radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 32%),
         linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
     box-shadow: var(--shadow);
+}
+
+.quiz-hierarchy-item {
+    display: grid;
+    gap: 0.45rem;
 }
 
 .quiz-exam-card-footer {
@@ -1397,6 +1402,19 @@ body.quiz-sidebar-open {
     width: 100%;
 }
 
+.quiz-hierarchy-link,
+.quiz-subexam-link {
+    color: #2563eb;
+    font-family: var(--font-heading);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.quiz-hierarchy-link {
+    font-size: 1.12rem;
+}
+
 .quiz-hierarchy-heading {
     display: inline-flex;
     align-items: center;
@@ -1422,12 +1440,17 @@ body.quiz-sidebar-open {
 
 .quiz-hierarchy-panel {
     display: none;
-    padding-top: 0.2rem;
+    padding: 0.15rem 0 0.1rem 1rem;
 }
 
 .quiz-subexam-list {
     display: grid;
     gap: 0.9rem;
+}
+
+.quiz-hierarchy-panel.is-open {
+    display: grid;
+    gap: 0.55rem;
 }
 
 .quiz-subexam-item {
@@ -1490,6 +1513,8 @@ body.quiz-sidebar-open {
 
 .quiz-title-link:hover,
 .quiz-title-link:focus-visible,
+.quiz-hierarchy-link:hover,
+.quiz-hierarchy-link:focus-visible,
 .quiz-collapsible-toggle:hover,
 .quiz-collapsible-toggle:focus-visible {
     color: #1d4ed8;
@@ -1502,6 +1527,10 @@ body.quiz-sidebar-open {
     color: #1e3a8a;
     border-left: 3px solid #1e3a8a;
     padding-left: 0.55rem;
+}
+
+.quiz-hierarchy-link.is-open {
+    color: #1e3a8a;
 }
 
 .quiz-set-card {
@@ -1518,6 +1547,10 @@ body.quiz-sidebar-open {
 
 .quiz-collapsible-panel.is-open {
     display: block;
+}
+
+.quiz-hierarchy-panel.quiz-collapsible-panel.is-open {
+    display: grid;
 }
 
 .quiz-set-form {

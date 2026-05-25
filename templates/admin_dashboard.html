@@ -292,25 +292,26 @@
         <div class="data-card" id="exam-flow" data-admin-panel tabindex="-1">
             <div class="admin-panel-header">
                 <div>
-                    <h2>Exam, set, and questions flow</h2>
-                    <p class="helper-text">All exams are shown here. Open an exam to manage sets, order, and full question lists.</p>
+                    <h2>Category, sub-exam, and sets flow</h2>
+                    <p class="helper-text">All sub-exams are shown here. Open any sub-exam to manage its sets, order, and question list.</p>
                 </div>
                 <a class="button button-primary" href="{{ url_for('admin.admin_exams') }}">Open Full Manager</a>
             </div>
             <table>
                 <thead>
-                    <tr><th>Exam</th><th>Sets</th><th>Questions</th><th>Action</th></tr>
+                    <tr><th>Category</th><th>Sub-exam</th><th>Sets</th><th>Questions</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                     {% for exam in exams %}
                     <tr>
+                        <td>{{ exam.category_name or '-' }}</td>
                         <td>{{ exam.title }}</td>
                         <td>{{ exam.set_count }}</td>
                         <td>{{ exam.question_count }}</td>
                         <td><a class="button button-secondary" href="{{ url_for('admin.admin_exam_sets', exam_id=exam.exam_id) }}">Open Sets</a></td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">No exams found.</td></tr>
+                    <tr><td colspan="5">No sub-exams found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

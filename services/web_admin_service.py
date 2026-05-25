@@ -190,14 +190,21 @@ class WebAdminService:
                     {
                         "exam_id": int(exam["exam_id"]),
                         "exam_title": exam["title"],
+                        "category_name": exam.get("category_name"),
                         "set_id": int(set_item["set_id"]),
                         "set_title": set_item["title"],
-                        "label": f"{exam['title']} - {set_item['title']}",
+                        "label": f"{exam.get('category_name') or 'Uncategorized'} -> {exam['title']} -> {set_item['title']}",
                         "is_premium_locked": bool(int(set_item.get("is_premium_locked", 0))),
                         "question_count": int(set_item.get("question_count") or 0),
                     }
                 )
         return choices
+
+    def list_categories(self) -> list[dict]:
+        return exam_service.get_categories()
+
+    def list_sub_exams(self) -> list[dict]:
+        return exam_service.get_sub_exams()
 
     def list_exams_overview(self) -> list[dict]:
         return exam_service.get_exams()
@@ -265,6 +272,24 @@ class WebAdminService:
 
     def add_exam(self, title: str, description: str | None = None) -> dict:
         return exam_service.add_exam(title, description)
+
+    def add_category(self, name: str) -> dict:
+        return exam_service.add_category(name)
+
+    def update_category(self, category_id: int, name: str) -> dict | None:
+        return exam_service.update_category(category_id, name)
+
+    def delete_category(self, category_id: int) -> None:
+        exam_service.delete_category(category_id)
+
+    def add_sub_exam(self, name: str, category_id: int) -> dict:
+        return exam_service.add_sub_exam(name, category_id)
+
+    def update_sub_exam(self, sub_exam_id: int, name: str, category_id: int) -> dict | None:
+        return exam_service.update_sub_exam(sub_exam_id, name, category_id)
+
+    def delete_sub_exam(self, sub_exam_id: int) -> None:
+        exam_service.delete_sub_exam(sub_exam_id)
 
     def add_set(self, exam_id: int, title: str, description: str | None = None, is_premium_locked: bool = False) -> dict:
         result = exam_service.add_set(exam_id, title, description)

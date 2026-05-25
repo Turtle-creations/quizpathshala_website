@@ -36,13 +36,84 @@ def normalize_unicode_text(value: str | None) -> str | None:
 
 class ExamService:
     def exam_storage_ready(self) -> bool:
-        return database.tables_exist({"exams", "exam_sets", "questions"})
+        return database.tables_exist({"categories", "sub_exams", "exams", "exam_sets", "questions"})
 
     def invalidate_cache(self):
+        self.get_categories.cache_clear()
+        self.get_sub_exams.cache_clear()
+        self.list_exam_hierarchy.cache_clear()
         self.get_exams.cache_clear()
         self.get_sets.cache_clear()
         self.get_set.cache_clear()
         self.get_questions.cache_clear()
+
+    @lru_cache(maxsize=1)
+    def get_categories(self) -> list[dict]:
+        with database.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    c.category_id,
+                    c.name,
+                    COUNT(DISTINCT se.sub_exam_id) AS sub_exam_count
+                FROM categories c
+                LEFT JOIN sub_exams se ON se.category_id = c.category_id
+                GROUP BY c.category_id, c.name
+                ORDER BY c.name, c.category_id
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    @lru_cache(maxsize=1)
+    def get_sub_exams(self) -> list[dict]:
+        with database.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    se.sub_exam_id,
+                    se.name,
+                    se.category_id,
+                    c.name AS category_name,
+                    e.exam_id,
+                    e.description,
+                    COUNT(DISTINCT s.set_id) AS set_count,
+                    COUNT(q.question_id) AS question_count
+                FROM sub_exams se
+                JOIN categories c ON c.category_id = se.category_id
+                LEFT JOIN exams e ON e.sub_exam_id = se.sub_exam_id
+                LEFT JOIN exam_sets s ON s.exam_id = e.exam_id
+                LEFT JOIN questions q ON q.set_id = s.set_id
+                GROUP BY
+                    se.sub_exam_id,
+                    se.name,
+                    se.category_id,
+                    c.name,
+                    e.exam_id,
+                    e.description
+                ORDER BY c.name, se.name, se.sub_exam_id
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    @lru_cache(maxsize=1)
+    def list_exam_hierarchy(self) -> list[dict]:
+        categories = []
+        sub_exams = self.get_sub_exams()
+        grouped: dict[int, dict] = {}
+        for category in self.get_categories():
+            bucket = {
+                "category_id": int(category["category_id"]),
+                "name": category["name"],
+                "sub_exams": [],
+            }
+            grouped[bucket["category_id"]] = bucket
+            categories.append(bucket)
+        for sub_exam in sub_exams:
+            bucket = grouped.get(int(sub_exam["category_id"]))
+            if not bucket or not sub_exam.get("exam_id"):
+                continue
+            bucket["sub_exams"].append(dict(sub_exam))
+        return categories
 
     @lru_cache(maxsize=1)
     def get_exams(self) -> list[dict]:
@@ -52,14 +123,27 @@ class ExamService:
                 SELECT
                     e.exam_id,
                     e.title,
+                    e.sub_exam_id,
                     e.description,
+                    se.name AS sub_exam_name,
+                    se.category_id,
+                    c.name AS category_name,
                     COUNT(DISTINCT s.set_id) AS set_count,
                     COUNT(q.question_id) AS question_count
                 FROM exams e
+                LEFT JOIN sub_exams se ON se.sub_exam_id = e.sub_exam_id
+                LEFT JOIN categories c ON c.category_id = se.category_id
                 LEFT JOIN exam_sets s ON s.exam_id = e.exam_id
                 LEFT JOIN questions q ON q.set_id = s.set_id
-                GROUP BY e.exam_id
-                ORDER BY e.title
+                GROUP BY
+                    e.exam_id,
+                    e.title,
+                    e.sub_exam_id,
+                    e.description,
+                    se.name,
+                    se.category_id,
+                    c.name
+                ORDER BY c.name, se.name, e.title, e.exam_id
                 """
             ).fetchall()
         return [dict(row) for row in rows]
@@ -154,6 +238,15 @@ class ExamService:
         parsed = int(time_limit or DEFAULT_QUESTION_TIME)
         return parsed if parsed > 0 else DEFAULT_QUESTION_TIME
 
+    def _default_category_id(self, conn) -> int:
+        row = conn.execute(
+            "SELECT category_id FROM categories WHERE name = ?",
+            ("Uncategorized",),
+        ).fetchone()
+        if row:
+            return int(row["category_id"])
+        return int(conn.execute("INSERT INTO categories (name) VALUES (?)", ("Uncategorized",)).lastrowid)
+
     def _next_set_position(self, conn, exam_id: int) -> int:
         row = conn.execute(
             "SELECT COALESCE(MAX(position), 0) AS max_position FROM exam_sets WHERE exam_id = ?",
@@ -161,24 +254,110 @@ class ExamService:
         ).fetchone()
         return int(row["max_position"] or 0) + 1
 
-    def add_exam(self, title: str, description: str | None = None):
+    def add_category(self, name: str) -> dict:
+        cleaned_name = " ".join(str(name or "").split())
+        if not cleaned_name:
+            raise ValueError("Category name is required.")
+        with database.connection() as conn:
+            category_id = int(
+                conn.execute(
+                    "INSERT INTO categories (name) VALUES (?)",
+                    (cleaned_name,),
+                ).lastrowid
+            )
+        self.invalidate_cache()
+        return self.get_category(category_id) or {}
+
+    def update_category(self, category_id: int, name: str) -> dict | None:
+        cleaned_name = " ".join(str(name or "").split())
+        if not cleaned_name:
+            raise ValueError("Category name is required.")
         with database.connection() as conn:
             cursor = conn.execute(
-                "INSERT INTO exams (title, description, created_at) VALUES (?, ?, ?)",
-                (title.strip(), description, timestamp()),
+                "UPDATE categories SET name = ? WHERE category_id = ?",
+                (cleaned_name, category_id),
             )
-            exam_id = cursor.lastrowid
+        if cursor.rowcount <= 0:
+            return None
+        self.invalidate_cache()
+        return self.get_category(category_id)
+
+    def delete_category(self, category_id: int):
+        with database.connection() as conn:
+            sub_exam_rows = conn.execute(
+                "SELECT sub_exam_id FROM sub_exams WHERE category_id = ?",
+                (category_id,),
+            ).fetchall()
+            for row in sub_exam_rows:
+                conn.execute("DELETE FROM exams WHERE sub_exam_id = ?", (row["sub_exam_id"],))
+            conn.execute("DELETE FROM sub_exams WHERE category_id = ?", (category_id,))
+            conn.execute("DELETE FROM categories WHERE category_id = ?", (category_id,))
+        self.invalidate_cache()
+
+    def add_sub_exam(self, name: str, category_id: int, description: str | None = None) -> dict:
+        cleaned_name = " ".join(str(name or "").split())
+        if not cleaned_name:
+            raise ValueError("Sub-exam name is required.")
+        with database.connection() as conn:
+            sub_exam_id = int(
+                conn.execute(
+                    "INSERT INTO sub_exams (name, category_id) VALUES (?, ?)",
+                    (cleaned_name, category_id),
+                ).lastrowid
+            )
+            exam_id = int(
+                conn.execute(
+                    "INSERT INTO exams (title, sub_exam_id, description, created_at) VALUES (?, ?, ?, ?)",
+                    (cleaned_name, sub_exam_id, description, timestamp()),
+                ).lastrowid
+            )
         self.invalidate_cache()
         created_exam = self.get_exam(exam_id)
-        logger.info("Exam insert success | exam_id=%s title=%s", exam_id, title.strip())
+        logger.info("Sub-exam insert success | sub_exam_id=%s exam_id=%s name=%s", sub_exam_id, exam_id, cleaned_name)
         return {
             "row_id": exam_id,
+            "sub_exam_id": sub_exam_id,
             "record": created_exam,
         }
 
+    def update_sub_exam(self, sub_exam_id: int, name: str, category_id: int) -> dict | None:
+        cleaned_name = " ".join(str(name or "").split())
+        if not cleaned_name:
+            raise ValueError("Sub-exam name is required.")
+        with database.connection() as conn:
+            sub_exam_cursor = conn.execute(
+                "UPDATE sub_exams SET name = ?, category_id = ? WHERE sub_exam_id = ?",
+                (cleaned_name, category_id, sub_exam_id),
+            )
+            conn.execute(
+                "UPDATE exams SET title = ? WHERE sub_exam_id = ?",
+                (cleaned_name, sub_exam_id),
+            )
+        if sub_exam_cursor.rowcount <= 0:
+            return None
+        self.invalidate_cache()
+        return self.get_sub_exam(sub_exam_id)
+
+    def delete_sub_exam(self, sub_exam_id: int):
+        with database.connection() as conn:
+            conn.execute("DELETE FROM exams WHERE sub_exam_id = ?", (sub_exam_id,))
+            conn.execute("DELETE FROM sub_exams WHERE sub_exam_id = ?", (sub_exam_id,))
+        self.invalidate_cache()
+
+    def add_exam(self, title: str, description: str | None = None):
+        with database.connection() as conn:
+            category_id = self._default_category_id(conn)
+        return self.add_sub_exam(title, category_id, description)
+
     def delete_exam(self, exam_id: int):
         with database.connection() as conn:
+            row = conn.execute(
+                "SELECT sub_exam_id FROM exams WHERE exam_id = ?",
+                (exam_id,),
+            ).fetchone()
             conn.execute("DELETE FROM exams WHERE exam_id = ?", (exam_id,))
+            if row and row["sub_exam_id"]:
+                conn.execute("DELETE FROM sub_exams WHERE sub_exam_id = ?", (row["sub_exam_id"],))
         self.invalidate_cache()
 
     def add_set(self, exam_id: int, title: str, description: str | None = None):
@@ -420,10 +599,57 @@ class ExamService:
             time_limit=time_limit,
         )
 
+    def get_category(self, category_id: int) -> dict | None:
+        with database.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    c.category_id,
+                    c.name,
+                    COUNT(DISTINCT se.sub_exam_id) AS sub_exam_count
+                FROM categories c
+                LEFT JOIN sub_exams se ON se.category_id = c.category_id
+                WHERE c.category_id = ?
+                GROUP BY c.category_id, c.name
+                """,
+                (category_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_sub_exam(self, sub_exam_id: int) -> dict | None:
+        with database.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    se.sub_exam_id,
+                    se.name,
+                    se.category_id,
+                    c.name AS category_name,
+                    e.exam_id,
+                    e.description
+                FROM sub_exams se
+                JOIN categories c ON c.category_id = se.category_id
+                LEFT JOIN exams e ON e.sub_exam_id = se.sub_exam_id
+                WHERE se.sub_exam_id = ?
+                """,
+                (sub_exam_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def get_exam(self, exam_id: int) -> dict | None:
         with database.connection() as conn:
             row = conn.execute(
-                "SELECT * FROM exams WHERE exam_id = ?",
+                """
+                SELECT
+                    e.*,
+                    se.name AS sub_exam_name,
+                    se.category_id,
+                    c.name AS category_name
+                FROM exams e
+                LEFT JOIN sub_exams se ON se.sub_exam_id = e.sub_exam_id
+                LEFT JOIN categories c ON c.category_id = se.category_id
+                WHERE e.exam_id = ?
+                """,
                 (exam_id,),
             ).fetchone()
         return dict(row) if row else None
