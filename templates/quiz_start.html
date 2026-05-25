@@ -24,8 +24,8 @@
             <div class="quiz-hierarchy-list">
                 {% for category in exam_hierarchy %}
                 <div class="quiz-hierarchy-item">
-                    <h3 class="quiz-hierarchy-heading">{{ category.name }}</h3>
-                    <div class="quiz-hierarchy-panel">
+                    <a class="quiz-hierarchy-link" href="#quiz-category-panel-{{ category.category_id }}" data-accordion-group="quiz-category-accordion" data-accordion-target="quiz-category-panel-{{ category.category_id }}" aria-expanded="false">{{ category.name }}</a>
+                    <div class="quiz-collapsible-panel quiz-hierarchy-panel" id="quiz-category-panel-{{ category.category_id }}">
                         {% for sub_exam in category.sub_exams %}
                         <a class="quiz-title-link quiz-subexam-link" href="{{ url_for('quiz.exam_sets', exam_id=sub_exam.exam_id) }}">{{ sub_exam.name }}</a>
                         {% else %}
@@ -40,4 +40,32 @@
         </div>
     </div>
 </section>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    Array.prototype.slice.call(document.querySelectorAll("[data-accordion-target]")).forEach(function (link) {
+        link.addEventListener("click", function (event) {
+            event.preventDefault();
+            var group = link.getAttribute("data-accordion-group");
+            var targetId = link.getAttribute("data-accordion-target");
+            var target = document.getElementById(targetId);
+            if (!target) {
+                return;
+            }
+            Array.prototype.slice.call(document.querySelectorAll("[data-accordion-group='" + group + "']")).forEach(function (peer) {
+                var peerTarget = document.getElementById(peer.getAttribute("data-accordion-target"));
+                if (!peerTarget || peer === link) {
+                    return;
+                }
+                peer.classList.remove("is-open");
+                peer.setAttribute("aria-expanded", "false");
+                peerTarget.classList.remove("is-open");
+            });
+            link.classList.toggle("is-open");
+            target.classList.toggle("is-open");
+            link.setAttribute("aria-expanded", link.classList.contains("is-open") ? "true" : "false");
+        });
+    });
+});
+</script>
 {% endblock %}
