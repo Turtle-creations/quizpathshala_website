@@ -9,31 +9,48 @@ from services.payment_service_db import payment_service
 from services.site_content import PREMIUM_BENEFITS
 from services.web_identity_service import web_identity_service
 from services.web_payment_service import web_payment_service
+from utils.logging_utils import get_logger
 
 
 premium_blueprint = Blueprint("premium", __name__)
+logger = get_logger(__name__)
 
 
 @premium_blueprint.route("/premium", methods=["GET", "POST"])
 @login_required
 def premium_page():
     user = web_identity_service.get_authenticated_user()
+    checkout_blockers = payment_service.get_checkout_blockers()
     if request.method == "POST":
         plan_type = request.form.get("plan_type", "")
         try:
             order = web_payment_service.create_order(user["user_id"], plan_type)
         except Exception as exc:
+            logger.warning(
+                "premium_checkout_create_failed | user_id=%s plan_type=%s reason=%s",
+                user.get("user_id"),
+                plan_type,
+                exc,
+            )
             flash(str(exc), "error")
             return redirect(url_for("premium.premium_page"))
         return redirect(url_for("premium.payment_page", order_id=order["order_id"]))
+
+    if checkout_blockers:
+        logger.info(
+            "premium_checkout_disabled | user_id=%s reasons=%s",
+            user.get("user_id"),
+            "; ".join(checkout_blockers),
+        )
 
     return render_template(
         "premium.html",
         page_title="Premium Plans",
         user=user,
         premium_prices=payment_service.list_premium_prices(),
-        payment_ready=not payment_service.get_missing_configuration(),
-        missing_payment_config=payment_service.get_missing_configuration(),
+        payment_ready=payment_service.checkout_ready(),
+        checkout_blockers=checkout_blockers,
+        payment_config_issues=payment_service.get_missing_configuration(),
         premium_status=payment_service.premium_status_text(user),
         premium_benefits=PREMIUM_BENEFITS,
         bot_url=BOT_URL,
@@ -75,6 +92,7 @@ def payment_page(order_id: str):
         plan=plan,
         checkout_options=json.dumps(checkout_options),
         public_base_url=PUBLIC_BASE_URL.rstrip("/") or request.url_root.rstrip("/"),
+        auto_open_checkout=True,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 

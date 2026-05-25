@@ -52,6 +52,19 @@ class PaymentService:
                 "Set PAYMENT_MODE=test to use the test payment environment."
             )
 
+    def get_checkout_blockers(self) -> list[str]:
+        blockers = []
+        if not self.is_test_mode():
+            blockers.append("PAYMENT_MODE must be set to test")
+        if not (RAZORPAY_KEY_ID or "").strip():
+            blockers.append("RAZORPAY_KEY_ID is missing")
+        if not (RAZORPAY_KEY_SECRET or "").strip():
+            blockers.append("RAZORPAY_KEY_SECRET is missing")
+        return blockers
+
+    def checkout_ready(self) -> bool:
+        return not self.get_checkout_blockers()
+
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
 
@@ -310,12 +323,7 @@ class PaymentService:
     def get_missing_configuration(self) -> list[str]:
         missing = []
 
-        if not self.is_test_mode():
-            missing.append("PAYMENT_MODE=test")
-        if not (RAZORPAY_KEY_ID or "").strip():
-            missing.append("RAZORPAY_KEY_ID")
-        if not (RAZORPAY_KEY_SECRET or "").strip():
-            missing.append("RAZORPAY_KEY_SECRET")
+        missing.extend(self.get_checkout_blockers())
         if not (RAZORPAY_WEBHOOK_SECRET or "").strip():
             missing.append("PAYMENT_WEBHOOK_SECRET")
         if not (os.getenv("PUBLIC_BASE_URL", "") or "").strip():
@@ -352,10 +360,9 @@ class PaymentService:
         if plan_type not in SUBSCRIPTION_PLANS:
             raise ValueError("Invalid plan selected")
 
-        self.validate_test_mode()
-        missing = self.get_missing_configuration()
-        if missing:
-            raise ValueError(f"Missing required payment env vars: {', '.join(missing)}")
+        checkout_blockers = self.get_checkout_blockers()
+        if checkout_blockers:
+            raise ValueError(f"Checkout unavailable: {'; '.join(checkout_blockers)}")
 
         plan = self.get_plan(plan_type)
         logger.info(
@@ -380,7 +387,7 @@ class PaymentService:
             response.raise_for_status()
             order = response.json()
 
-        payment_url = f"{PUBLIC_BASE_URL}/pay/{order['id']}"
+        payment_url = f"{(PUBLIC_BASE_URL or '').rstrip('/')}/payment/{order['id']}" if PUBLIC_BASE_URL else f"/payment/{order['id']}"
         self._save_order_record(
             order_id=order["id"],
             user_id=user_id,
@@ -400,9 +407,9 @@ class PaymentService:
         }
 
     async def create_test_order(self, user_id: int) -> dict:
-        self.validate_test_mode()
-        if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
-            raise ValueError("Razorpay credentials are not configured")
+        checkout_blockers = self.get_checkout_blockers()
+        if checkout_blockers:
+            raise ValueError(f"Checkout unavailable: {'; '.join(checkout_blockers)}")
 
         payload = {
             "amount": 100,
@@ -419,7 +426,7 @@ class PaymentService:
             response.raise_for_status()
             order = response.json()
 
-        payment_url = f"{PUBLIC_BASE_URL}/pay/{order['id']}"
+        payment_url = f"{(PUBLIC_BASE_URL or '').rstrip('/')}/payment/{order['id']}" if PUBLIC_BASE_URL else f"/payment/{order['id']}"
         self._save_order_record(
             order_id=order["id"],
             user_id=user_id,

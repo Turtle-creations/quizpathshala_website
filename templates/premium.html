@@ -35,7 +35,7 @@
                     {% if payment_ready %}
                     <form accept-charset="UTF-8" method="post">
                         <input type="hidden" name="plan_type" value="{{ item.key }}">
-                        <button class="button button-primary" type="submit">Buy Now</button>
+                        <button class="button button-primary" type="submit">Open Test Checkout</button>
                     </form>
                     {% else %}
                     <button class="button button-primary" type="button" disabled>Checkout Unavailable</button>
@@ -45,9 +45,12 @@
             </div>
             {% if not payment_ready %}
             <div class="text-page trust-note">
-                <h3>Payments not configured yet</h3>
-                <p>Razorpay checkout is currently unavailable because some required environment variables are missing.</p>
-                <p>{{ missing_payment_config|join(", ") }}</p>
+                <h3>Test checkout disabled</h3>
+                <p>Razorpay test checkout is unavailable until the required test-mode settings are present.</p>
+                <p>{{ checkout_blockers|join("; ") }}</p>
+                {% if payment_config_issues %}
+                <p>Other payment environment issues: {{ payment_config_issues|join("; ") }}</p>
+                {% endif %}
             </div>
             {% endif %}
         </div>

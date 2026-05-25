@@ -132,6 +132,43 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(saved_order["status"], "created")
         self.assertEqual(saved_order["plan_type"], "month_1")
 
+    def test_premium_page_enables_checkout_in_test_mode_with_checkout_keys(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-premium-page@example.com")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch.object(payment_service, "get_checkout_blockers", return_value=[]), mock.patch.object(
+                payment_service, "get_missing_configuration", return_value=["PAYMENT_WEBHOOK_SECRET is missing"]
+            ):
+                response = client.get("/premium")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Open Test Checkout", body)
+        self.assertNotIn("Checkout Unavailable", body)
+
+    def test_premium_page_shows_exact_disabled_reason(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-disabled-page@example.com")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch.object(
+                payment_service,
+                "get_checkout_blockers",
+                return_value=["PAYMENT_MODE must be set to test", "RAZORPAY_KEY_SECRET is missing"],
+            ), mock.patch.object(
+                payment_service,
+                "get_missing_configuration",
+                return_value=["PAYMENT_MODE must be set to test", "RAZORPAY_KEY_SECRET is missing"],
+            ):
+                response = client.get("/premium")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Test checkout disabled", body)
+        self.assertIn("PAYMENT_MODE must be set to test", body)
+        self.assertIn("RAZORPAY_KEY_SECRET is missing", body)
+
     def test_payment_success_callback_updates_order_and_webhook_activates_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-success@example.com")
         response_payload = self._order_response(
@@ -208,6 +245,29 @@ class PaymentEnvironmentTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNotNone(payment_row)
         self.assertEqual(payment_row["status"], "captured")
+
+    def test_posting_plan_redirects_to_payment_page_with_auto_open_checkout(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_open_checkout_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch(
+                "services.web_payment_service.httpx.Client",
+                side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+            ):
+                response = client.post("/premium", data={"plan_type": "month_1"}, follow_redirects=True)
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://checkout.razorpay.com/v1/checkout.js", body)
+        self.assertIn("window.addEventListener(\"load\"", body)
+        self.assertIn("rzp.open();", body)
 
     def test_failed_payment_does_not_activate_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-failed@example.com")
@@ -296,7 +356,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
 
     def test_non_test_payment_mode_is_blocked(self):
         with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"):
-            self.assertIn("PAYMENT_MODE=test", payment_service.get_missing_configuration())
+            self.assertIn("PAYMENT_MODE must be set to test", payment_service.get_missing_configuration())
             with self.assertRaisesRegex(ValueError, "PAYMENT_MODE=test"):
                 payment_service.validate_test_mode()
 
