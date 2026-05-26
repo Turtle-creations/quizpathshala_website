@@ -13,8 +13,9 @@
     <div class="container narrow">
         <div class="text-page">
             <p>Secure payment is handled by Razorpay. Premium is activated only after a valid captured-payment webhook reaches the server.</p>
-            <p>If the test checkout does not open automatically, use the button below.</p>
-            <button class="button button-primary" id="pay-btn">Pay with Razorpay</button>
+            <p>Use the button below to open Razorpay test checkout when you are ready.</p>
+            <button class="button button-primary" id="pay-btn">Pay Now</button>
+            <p id="payment-debug-message" class="helper-text" aria-live="polite"></p>
         </div>
     </div>
 </section>
@@ -22,6 +23,22 @@
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 const options = {{ checkout_options|safe }};
+const debugMessage = document.getElementById("payment-debug-message");
+
+async function logClientEvent(eventName, details) {
+    try {
+        await fetch("{{ public_base_url }}/payment/{{ order.order_id }}/client-event", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            credentials: "same-origin",
+            body: JSON.stringify(Object.assign({ event: eventName }, details || {})),
+            keepalive: true
+        });
+    } catch (error) {
+        console.error("payment client event failed", error);
+    }
+}
+
 options.handler = function (response) {
     const form = document.createElement("form");
     form.method = "POST";
@@ -38,7 +55,10 @@ options.handler = function (response) {
 };
 options.modal = {
     ondismiss: function () {
-        window.location.href = "{{ public_base_url }}/payment/cancel?razorpay_order_id={{ order.order_id }}";
+        debugMessage.textContent = "Checkout was closed before payment completion.";
+        logClientEvent("checkout_cancelled", {
+            reason: "checkout_cancelled"
+        });
     }
 };
 const rzp = new Razorpay(options);
@@ -49,16 +69,26 @@ rzp.on("payment.failed", function (response) {
             ? response.error.metadata.payment_id
             : ""
     );
-    window.location.href = "{{ public_base_url }}/payment/failed?razorpay_order_id={{ order.order_id }}&razorpay_payment_id=" + paymentId + "&reason=" + reason;
+    logClientEvent("razorpay_failure_callback_received", {
+        payment_id: paymentId ? decodeURIComponent(paymentId) : "",
+        reason: decodeURIComponent(reason),
+        raw_callback_data: response
+    }).finally(function () {
+        window.location.href = "{{ public_base_url }}/payment/failed?razorpay_order_id={{ order.order_id }}&razorpay_payment_id=" + paymentId + "&reason=" + reason;
+    });
 });
-document.getElementById("pay-btn").addEventListener("click", function (event) {
+document.getElementById("pay-btn").addEventListener("click", async function (event) {
     event.preventDefault();
-    rzp.open();
+    debugMessage.textContent = "";
+    await logClientEvent("pay_button_clicked");
+    try {
+        rzp.open();
+        await logClientEvent("razorpay_checkout_opened");
+    } catch (error) {
+        const reason = error && error.message ? error.message : "checkout_open_failed";
+        debugMessage.textContent = "Razorpay checkout could not be opened. " + reason;
+        await logClientEvent("razorpay_checkout_open_failed", { reason: reason });
+    }
 });
-{% if auto_open_checkout %}
-window.addEventListener("load", function () {
-    rzp.open();
-});
-{% endif %}
 </script>
 {% endblock %}

@@ -37,6 +37,7 @@ def _render_payment_tracker(
         order=order,
         verified=verified,
         tracker_steps=(tracker or {}).get("steps", []),
+        current_step=(tracker or {}).get("current_step"),
         auto_refresh=bool(tracker and tracker.get("has_pending") and not tracker.get("has_failure")),
         status_url=url_for("premium.payment_status_page", order_id=order_id) if order_id else None,
         bot_url=BOT_URL,
@@ -98,7 +99,7 @@ def payment_page(order_id: str):
         flash("This payment order does not belong to your account.", "error")
         return redirect(url_for("premium.premium_page"))
 
-    payment_service.mark_checkout_opened(order_id)
+    logger.info("payment_page_loaded | order_id=%s user_id=%s", order_id, user.get("user_id"))
     plan = payment_service.get_plan(order["plan_type"])
     checkout_options = {
         "key": RAZORPAY_KEY_ID,
@@ -121,9 +122,66 @@ def payment_page(order_id: str):
         plan=plan,
         checkout_options=json.dumps(checkout_options),
         public_base_url=PUBLIC_BASE_URL.rstrip("/") or request.url_root.rstrip("/"),
-        auto_open_checkout=True,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
+
+
+@premium_blueprint.route("/payment/<order_id>/client-event", methods=["POST"])
+@login_required
+def payment_client_event(order_id: str):
+    user = web_identity_service.get_authenticated_user()
+    order = payment_service.get_order(order_id)
+    if not order:
+        return jsonify({"detail": "Invalid payment order"}), 404
+    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.is_admin_authenticated():
+        return jsonify({"detail": "Forbidden"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    event_name = str(payload.get("event") or "").strip().lower()
+    payment_id = (payload.get("payment_id") or "").strip() or None
+    reason = (payload.get("reason") or "").strip() or None
+    raw_callback_data = payload.get("raw_callback_data")
+    serialized_callback = json.dumps(raw_callback_data) if raw_callback_data is not None else None
+
+    if event_name == "pay_button_clicked":
+        logger.info("pay_button_clicked | order_id=%s user_id=%s", order_id, user.get("user_id"))
+        payment_service.mark_pay_button_clicked(order_id)
+    elif event_name == "razorpay_checkout_opened":
+        logger.info("razorpay_checkout_opened | order_id=%s user_id=%s", order_id, user.get("user_id"))
+        payment_service.mark_checkout_opened(order_id)
+    elif event_name == "razorpay_checkout_open_failed":
+        logger.warning("razorpay_checkout_open_failed | order_id=%s user_id=%s reason=%s", order_id, user.get("user_id"), reason)
+        payment_service._update_order_debug(
+            order_id,
+            failure_reason=reason or "checkout_open_failed",
+            last_error=reason or "checkout_open_failed",
+            error_reason=reason or "checkout_open_failed",
+        )
+    elif event_name == "razorpay_failure_callback_received":
+        logger.warning("razorpay_failure_callback_received | order_id=%s payment_id=%s reason=%s", order_id, payment_id, reason)
+        payment_service.mark_callback_received(
+            order_id,
+            payment_id=payment_id,
+            verified=False,
+            error_reason=reason or "payment_failed",
+            raw_callback_data=serialized_callback,
+            status="failed",
+        )
+    elif event_name == "checkout_cancelled":
+        logger.warning("payment_failed | order_id=%s payment_id=%s reason=checkout_cancelled", order_id, payment_id)
+        payment_service._update_order_debug(
+            order_id,
+            status="cancelled",
+            payment_id=payment_id,
+            callback_status="cancelled",
+            failure_reason="checkout_cancelled",
+            last_error="checkout_cancelled",
+            error_reason="checkout_cancelled",
+        )
+    else:
+        return jsonify({"detail": "Unknown event"}), 400
+
+    return jsonify({"ok": True})
 
 
 @premium_blueprint.route("/payment/status/<order_id>")
@@ -171,28 +229,33 @@ def payment_success():
     order = payment_service.get_order(order_id) if order_id else None
     verified = False
     if order_id and payment_id and signature:
-        logger.info("checkout_callback_received | order_id=%s payment_id=%s", order_id, payment_id)
+        logger.info("razorpay_success_callback_received | order_id=%s payment_id=%s", order_id, payment_id)
+        raw_callback_data = json.dumps({key: request.values.get(key) for key in request.values.keys()})
         verified = payment_service.verify_payment_signature(
             order_id=order_id,
             payment_id=payment_id,
             signature=signature,
         )
         if verified:
+            logger.info("razorpay_signature_verified | order_id=%s payment_id=%s", order_id, payment_id)
             order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_verified")
             payment_service.mark_callback_received(
                 order_id,
                 payment_id=payment_id,
                 verified=True,
                 error_reason=None,
+                raw_callback_data=raw_callback_data,
                 status="callback_verified",
             )
         else:
+            logger.warning("razorpay_signature_failed | order_id=%s payment_id=%s", order_id, payment_id)
             order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_signature_failed")
             payment_service.mark_callback_received(
                 order_id,
                 payment_id=payment_id,
                 verified=False,
                 error_reason="callback_signature_failed",
+                raw_callback_data=raw_callback_data,
                 status="callback_signature_failed",
             )
             logger.warning("payment_failed | order_id=%s payment_id=%s reason=callback_signature_failed", order_id, payment_id)
@@ -210,10 +273,18 @@ def payment_success():
 @login_required
 def payment_cancel():
     order_id = request.args.get("razorpay_order_id")
+    payment_id = request.args.get("razorpay_payment_id")
     if order_id:
         payment_service.set_order_status_if_not_paid(order_id, "cancelled")
-        payment_service._update_order_debug(order_id, error_reason="checkout_cancelled")
-        logger.warning("payment_failed | order_id=%s payment_id=%s reason=checkout_cancelled", order_id, None)
+        payment_service._update_order_debug(
+            order_id,
+            payment_id=payment_id,
+            callback_status="cancelled",
+            failure_reason="checkout_cancelled",
+            last_error="checkout_cancelled",
+            error_reason="checkout_cancelled",
+        )
+        logger.warning("payment_failed | order_id=%s payment_id=%s reason=checkout_cancelled", order_id, payment_id)
     return _render_payment_tracker(
         order_id=order_id,
         page_title="Payment Cancelled",
@@ -231,13 +302,14 @@ def payment_failed():
     payment_id = request.args.get("razorpay_payment_id")
     reason = request.args.get("reason") or "Payment verification failed before completion."
     if order_id:
-        logger.info("checkout_callback_received | order_id=%s payment_id=%s", order_id, payment_id)
+        logger.warning("razorpay_failure_callback_received | order_id=%s payment_id=%s reason=%s", order_id, payment_id, reason)
         payment_service.set_order_status_if_not_paid(order_id, "failed")
         payment_service.mark_callback_received(
             order_id,
             payment_id=payment_id,
             verified=False,
             error_reason=reason,
+            raw_callback_data=json.dumps(dict(request.args)),
             status="failed",
         )
         logger.warning("payment_failed | order_id=%s payment_id=%s reason=%s", order_id, payment_id, reason)
@@ -253,6 +325,8 @@ def payment_failed():
 
 @premium_blueprint.route("/webhook", methods=["POST"])
 @premium_blueprint.route("/webhook/razorpay", methods=["POST"])
+@premium_blueprint.route("/payment/webhook", methods=["POST"])
+@premium_blueprint.route("/payment/webhook/razorpay", methods=["POST"])
 def razorpay_webhook():
     raw_body = request.get_data()
     signature = request.headers.get("X-Razorpay-Signature", "")
@@ -260,6 +334,7 @@ def razorpay_webhook():
     logger.info("webhook_received | event_id=%s content_length=%s", event_id, len(raw_body or b""))
 
     if not payment_service.verify_webhook_signature(raw_body, signature):
+        logger.warning("webhook_signature_failed | event_id=%s", event_id)
         return jsonify({"detail": "Invalid webhook signature"}), 401
     logger.info("webhook_signature_verified | event_id=%s", event_id)
 

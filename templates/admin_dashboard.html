@@ -365,7 +365,7 @@
                 </div>
             </div>
             <table>
-                <thead><tr><th>Order ID</th><th>Payment ID</th><th>User</th><th>Plan</th><th>Status</th><th>Callback</th><th>Webhook</th><th>Error</th><th>Created</th><th>Updated</th></tr></thead>
+                <thead><tr><th>Order ID</th><th>Payment ID</th><th>User</th><th>Plan</th><th>Current Step</th><th>Callback Status</th><th>Webhook Status</th><th>Failure Reason</th><th>Last Error</th><th>Raw Callback Data</th><th>Webhook Event</th><th>Created</th><th>Updated</th></tr></thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
@@ -373,15 +373,18 @@
                         <td>{{ order.payment_id or "-" }}</td>
                         <td><a href="{{ url_for('admin.admin_user_detail', user_id=order.user_id) }}">{{ order.full_name or order.user_id }}</a></td>
                         <td>{{ order.plan_type }}</td>
-                        <td>{{ order.status }}</td>
-                        <td>{{ "Yes" if order.callback_verified else "No" }}</td>
-                        <td>{{ "Yes" if order.webhook_verified else "No" }}</td>
-                        <td>{{ order.error_reason or "-" }}</td>
+                        <td>{{ order.current_step or "-" }}</td>
+                        <td>{{ order.callback_status or "-" }}</td>
+                        <td>{{ order.webhook_status or "-" }}</td>
+                        <td>{{ order.failure_reason or order.error_reason or "-" }}</td>
+                        <td>{{ order.last_error or "-" }}</td>
+                        <td>{{ order.raw_callback_data or "-" }}</td>
+                        <td>{{ order.webhook_event_type or "-" }}</td>
                         <td>{{ order.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ order.updated_at|format_user_datetime(current_user) if order.updated_at else "-" }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="10">No payment debug logs yet.</td></tr>
+                    <tr><td colspan="13">No payment debug logs yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

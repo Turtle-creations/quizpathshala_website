@@ -7,7 +7,7 @@ from flask import g, has_request_context
 
 from db.database import database
 from services.exam_service_db import exam_service
-from services.payment_service_db import SUBSCRIPTION_PLANS
+from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
 from services.quiz_settings_service import quiz_settings_service
 from services.support_service_db import support_service
 from services.user_service_db import now_iso, user_service
@@ -689,7 +689,7 @@ class WebAdminService:
 
     def _list_orders_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
         where_sql, params = self._date_filter_sql("po.created_at", date_from, date_to)
-        return self._fetch_page(
+        rows, pagination = self._fetch_page(
             conn,
             select_sql=f"""
                 SELECT
@@ -705,6 +705,9 @@ class WebAdminService:
             params=params,
             page=page,
         )
+        for row in rows:
+            row["current_step"] = payment_service.current_step(row)
+        return rows, pagination
 
     def _list_support_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
         where_sql, params = self._date_filter_sql("sm.created_at", date_from, date_to)

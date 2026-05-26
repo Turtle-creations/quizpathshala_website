@@ -139,6 +139,12 @@ class Database:
                 self._ensure_column(conn, "payment_orders", "payment_id", "TEXT")
                 self._ensure_column(conn, "payment_orders", "callback_verified", "INTEGER NOT NULL DEFAULT 0")
                 self._ensure_column(conn, "payment_orders", "webhook_verified", "INTEGER NOT NULL DEFAULT 0")
+                self._ensure_column(conn, "payment_orders", "callback_status", "TEXT NOT NULL DEFAULT 'pending'")
+                self._ensure_column(conn, "payment_orders", "webhook_status", "TEXT NOT NULL DEFAULT 'pending'")
+                self._ensure_column(conn, "payment_orders", "failure_reason", "TEXT")
+                self._ensure_column(conn, "payment_orders", "last_error", "TEXT")
+                self._ensure_column(conn, "payment_orders", "raw_callback_data", "TEXT")
+                self._ensure_column(conn, "payment_orders", "webhook_event_type", "TEXT")
                 self._ensure_column(conn, "payment_orders", "error_reason", "TEXT")
                 self._ensure_column(conn, "payment_orders", "checkout_opened_at", "TEXT")
                 self._ensure_column(conn, "payment_orders", "payment_submitted_at", "TEXT")
@@ -182,6 +188,12 @@ class Database:
             self._ensure_column(conn, "payment_orders", "payment_id", "TEXT")
             self._ensure_column(conn, "payment_orders", "callback_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "payment_orders", "webhook_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "payment_orders", "callback_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "payment_orders", "webhook_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "payment_orders", "failure_reason", "TEXT")
+            self._ensure_column(conn, "payment_orders", "last_error", "TEXT")
+            self._ensure_column(conn, "payment_orders", "raw_callback_data", "TEXT")
+            self._ensure_column(conn, "payment_orders", "webhook_event_type", "TEXT")
             self._ensure_column(conn, "payment_orders", "error_reason", "TEXT")
             self._ensure_column(conn, "payment_orders", "checkout_opened_at", "TEXT")
             self._ensure_column(conn, "payment_orders", "payment_submitted_at", "TEXT")
@@ -530,6 +542,12 @@ class Database:
                 payment_id TEXT,
                 callback_verified INTEGER NOT NULL DEFAULT 0,
                 webhook_verified INTEGER NOT NULL DEFAULT 0,
+                callback_status TEXT NOT NULL DEFAULT 'pending',
+                webhook_status TEXT NOT NULL DEFAULT 'pending',
+                failure_reason TEXT,
+                last_error TEXT,
+                raw_callback_data TEXT,
+                webhook_event_type TEXT,
                 error_reason TEXT,
                 checkout_opened_at TEXT,
                 payment_submitted_at TEXT,
@@ -744,6 +762,12 @@ class Database:
             payment_id TEXT,
             callback_verified INTEGER NOT NULL DEFAULT 0,
             webhook_verified INTEGER NOT NULL DEFAULT 0,
+            callback_status TEXT NOT NULL DEFAULT 'pending',
+            webhook_status TEXT NOT NULL DEFAULT 'pending',
+            failure_reason TEXT,
+            last_error TEXT,
+            raw_callback_data TEXT,
+            webhook_event_type TEXT,
             error_reason TEXT,
             checkout_opened_at TEXT,
             payment_submitted_at TEXT,

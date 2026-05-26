@@ -196,6 +196,54 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIn("PAYMENT_MODE must be set to test", body)
         self.assertIn("RAZORPAY_KEY_SECRET is missing", body)
 
+    def test_payment_page_does_not_auto_open_checkout(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-no-auto-open@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_no_auto_open_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch(
+                "services.web_payment_service.httpx.Client",
+                side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+            ):
+                response = client.post("/premium", data={"plan_type": "month_1"}, follow_redirects=True)
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Pay Now", body)
+        self.assertNotIn("window.addEventListener(\"load\"", body)
+
+    def test_payment_client_event_marks_checkout_opened_after_click(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-click-open@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_click_open_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            web_payment_service.create_order(int(user["user_id"]), "month_1")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            response = client.post(
+                "/payment/order_test_click_open_001/client-event",
+                json={"event": "razorpay_checkout_opened"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        saved_order = payment_service.get_order("order_test_click_open_001")
+        self.assertTrue(saved_order["checkout_opened_at"])
+
     def test_payment_success_callback_updates_order_and_webhook_activates_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-success@example.com")
         response_payload = self._order_response(
@@ -253,7 +301,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         webhook_signature = self._webhook_signature(raw_body)
 
         webhook_response = app.test_client().post(
-            "/webhook",
+            "/payment/webhook",
             data=raw_body,
             headers={
                 "Content-Type": "application/json",
@@ -279,6 +327,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(payment_row["status"], "captured")
         self.assertEqual(int(saved_order["webhook_verified"] or 0), 1)
         self.assertTrue(saved_order["premium_activated_at"])
+        self.assertEqual(saved_order["webhook_event_type"], "payment.captured")
 
     def test_posting_plan_redirects_to_payment_page_with_auto_open_checkout(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
@@ -300,10 +349,12 @@ class PaymentEnvironmentTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("https://checkout.razorpay.com/v1/checkout.js", body)
-        self.assertIn("window.addEventListener(\"load\"", body)
+        self.assertIn("pay-btn", body)
+        self.assertIn("rzp.open();", body)
+        self.assertNotIn("window.addEventListener(\"load\"", body)
         self.assertIn("rzp.open();", body)
         saved_order = payment_service.get_order("order_test_open_checkout_001")
-        self.assertTrue(saved_order["checkout_opened_at"])
+        self.assertFalse(bool(saved_order["checkout_opened_at"]))
 
     def test_failed_payment_does_not_activate_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-failed@example.com")
@@ -340,8 +391,11 @@ class PaymentEnvironmentTests(unittest.TestCase):
         saved_order = payment_service.get_order(created_order["order_id"])
         self.assertEqual(saved_order["status"], "failed")
         self.assertEqual(saved_order["payment_id"], "pay_test_failed_001")
+        self.assertEqual(saved_order["failure_reason"], "payment_failed")
+        self.assertEqual(saved_order["last_error"], "payment_failed")
         self.assertEqual(saved_order["error_reason"], "payment_failed")
         self.assertEqual(int(saved_order["callback_verified"] or 0), 0)
+        self.assertEqual(saved_order["callback_status"], "failed")
 
     def test_admin_payment_logs_show_saved_entry(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-admin-log@example.com")
@@ -375,7 +429,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         raw_body = json.dumps(webhook_payload).encode("utf-8")
 
         webhook_response = app.test_client().post(
-            "/webhook",
+            "/payment/webhook",
             data=raw_body,
             headers={
                 "Content-Type": "application/json",
@@ -400,6 +454,9 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(matching_order["payment_id"], "pay_test_admin_001")
         self.assertEqual(int(matching_order["callback_verified"] or 0), 0)
         self.assertEqual(int(matching_order["webhook_verified"] or 0), 1)
+        self.assertEqual(matching_order["current_step"], "premium_activated")
+        self.assertEqual(matching_order["webhook_status"], "verified")
+        self.assertEqual(matching_order["webhook_event_type"], "payment.captured")
         self.assertTrue(matching_order["updated_at"])
 
     def test_non_test_payment_mode_is_blocked(self):

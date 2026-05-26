@@ -110,6 +110,23 @@ class PaymentService:
         ]
         return steps
 
+    def current_step(self, order: dict) -> str:
+        if order.get("premium_activated_at"):
+            return "premium_activated"
+        if str(order.get("webhook_status") or "") == "failed":
+            return "webhook_failed"
+        if order.get("webhook_received_at"):
+            return "webhook_received"
+        if str(order.get("callback_status") or "") == "failed":
+            return "callback_failed"
+        if order.get("callback_received_at"):
+            return "callback_received"
+        if order.get("payment_submitted_at"):
+            return "payment_submitted"
+        if order.get("checkout_opened_at"):
+            return "checkout_opened"
+        return "order_created"
+
     def order_tracker(self, order_id: str) -> dict | None:
         order = self.get_order(order_id)
         if not order:
@@ -122,6 +139,7 @@ class PaymentService:
             "steps": steps,
             "has_pending": has_pending,
             "has_failure": has_failure,
+            "current_step": self.current_step(order),
             "status_kind": "failure" if has_failure else ("pending" if has_pending else "success"),
         }
 
@@ -133,6 +151,12 @@ class PaymentService:
         payment_id: str | object = _UNSET,
         callback_verified: int | object = _UNSET,
         webhook_verified: int | object = _UNSET,
+        callback_status: str | object = _UNSET,
+        webhook_status: str | object = _UNSET,
+        failure_reason: str | None | object = _UNSET,
+        last_error: str | None | object = _UNSET,
+        raw_callback_data: str | None | object = _UNSET,
+        webhook_event_type: str | None | object = _UNSET,
         error_reason: str | None | object = _UNSET,
         checkout_opened_at: str | object = _UNSET,
         payment_submitted_at: str | object = _UNSET,
@@ -147,6 +171,12 @@ class PaymentService:
             ("payment_id", payment_id),
             ("callback_verified", callback_verified),
             ("webhook_verified", webhook_verified),
+            ("callback_status", callback_status),
+            ("webhook_status", webhook_status),
+            ("failure_reason", failure_reason),
+            ("last_error", last_error),
+            ("raw_callback_data", raw_callback_data),
+            ("webhook_event_type", webhook_event_type),
             ("error_reason", error_reason),
             ("checkout_opened_at", checkout_opened_at),
             ("payment_submitted_at", payment_submitted_at),
@@ -170,10 +200,16 @@ class PaymentService:
         return dict(row) if row else None
 
     def mark_checkout_opened(self, order_id: str) -> dict | None:
-        order = self.get_order(order_id)
-        if not order or order.get("checkout_opened_at"):
-            return order
-        return self._update_order_debug(order_id, checkout_opened_at=now_iso(), error_reason=None)
+        return self._update_order_debug(
+            order_id,
+            checkout_opened_at=now_iso(),
+            error_reason=None,
+            failure_reason=None,
+            last_error=None,
+        )
+
+    def mark_pay_button_clicked(self, order_id: str) -> dict | None:
+        return self._update_order_debug(order_id, error_reason=None, failure_reason=None, last_error=None)
 
     def mark_callback_received(
         self,
@@ -182,6 +218,7 @@ class PaymentService:
         payment_id: str | None,
         verified: bool,
         error_reason: str | None = None,
+        raw_callback_data: str | None = None,
         status: str | None = None,
         submitted: bool = True,
     ) -> dict | None:
@@ -189,6 +226,10 @@ class PaymentService:
             order_id,
             payment_id=payment_id,
             callback_verified=1 if verified else 0,
+            callback_status="verified" if verified else "failed",
+            failure_reason=error_reason,
+            last_error=error_reason,
+            raw_callback_data=raw_callback_data,
             error_reason=error_reason,
             callback_received_at=now_iso(),
             payment_submitted_at=now_iso() if submitted else _UNSET,
@@ -201,18 +242,29 @@ class PaymentService:
         *,
         payment_id: str | None,
         verified: bool,
+        event_type: str | None = None,
         error_reason: str | None = None,
     ) -> dict | None:
         return self._update_order_debug(
             order_id,
             payment_id=payment_id,
             webhook_verified=1 if verified else 0,
+            webhook_status="verified" if verified else "failed",
+            failure_reason=error_reason,
+            last_error=error_reason,
+            webhook_event_type=event_type,
             error_reason=error_reason,
             webhook_received_at=now_iso(),
         )
 
     def mark_premium_activated(self, order_id: str) -> dict | None:
-        return self._update_order_debug(order_id, premium_activated_at=now_iso(), error_reason=None)
+        return self._update_order_debug(
+            order_id,
+            premium_activated_at=now_iso(),
+            error_reason=None,
+            failure_reason=None,
+            last_error=None,
+        )
 
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
@@ -340,6 +392,7 @@ class PaymentService:
             order_id,
             source,
         )
+        logger.info("premium_activation_started | order_id=%s source=%s", order_id, source)
         logger.info("premium activation start | order_id=%s source=%s", order_id, source)
         if source != PREMIUM_ACTIVATION_SOURCE_WEBHOOK:
             logger.warning(
@@ -347,6 +400,7 @@ class PaymentService:
                 order_id,
                 source,
             )
+            logger.warning("premium_activation_failed | order_id=%s source=%s reason=non_webhook_source", order_id, source)
             logger.info(
                 "premium activation end | order_id=%s ok=%s reason=%s",
                 order_id,
@@ -356,9 +410,12 @@ class PaymentService:
             return {"ok": False, "reason": "non_webhook_source", "activated_now": False}
         order = self.get_order(order_id)
         if not order:
+            logger.warning("premium_activation_failed | order_id=%s source=%s reason=order_not_found", order_id, source)
             logger.info("premium activation end | order_id=%s ok=%s reason=%s", order_id, False, "order_not_found")
             return {"ok": False, "reason": "order_not_found"}
         result = self.ensure_premium_active_for_order_data(order, source=source)
+        if not result.get("ok"):
+            logger.warning("premium_activation_failed | order_id=%s source=%s reason=%s", order_id, source, result.get("reason"))
         logger.info(
             "premium activation end | order_id=%s ok=%s reason=%s activated_now=%s",
             order_id,
@@ -783,6 +840,7 @@ class PaymentService:
 
     def process_captured_payment(self, event_id: str, payload: dict):
         event_name = payload.get("event")
+        logger.info("webhook_event_type | event_id=%s event=%s", event_id, event_name)
         if event_name != "payment.captured":
             logger.info("Ignoring webhook event | event_id=%s event=%s", event_id, event_name)
             return {"status": "ignored", "reason": "unsupported_event"}
@@ -853,7 +911,13 @@ class PaymentService:
                     expected_amount,
                     amount,
                 )
-                self.mark_webhook_received(order_id, payment_id=payment_id, verified=False, error_reason="amount_mismatch")
+                self.mark_webhook_received(
+                    order_id,
+                    payment_id=payment_id,
+                    verified=False,
+                    event_type=event_name,
+                    error_reason="amount_mismatch",
+                )
                 raise ValueError("Payment amount does not match the saved order")
 
             plan_type = order_data["plan_type"]
@@ -914,7 +978,13 @@ class PaymentService:
                 "UPDATE payment_orders SET status = ?, updated_at = ? WHERE order_id = ?",
                 ("paid", now_iso(), order_id),
             )
-        self.mark_webhook_received(order_id, payment_id=payment_id, verified=True, error_reason=None)
+        self.mark_webhook_received(
+            order_id,
+            payment_id=payment_id,
+            verified=True,
+            event_type=event_name,
+            error_reason=None,
+        )
 
         activation_result = self.ensure_premium_active_for_order(
             order_id,
