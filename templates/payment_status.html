@@ -15,7 +15,7 @@
             {% if order %}
             <p><strong>Order ID:</strong> {{ order.order_id }}</p>
             <p><strong>Payment ID:</strong> {{ order.payment_id or "Pending" }}</p>
-            <p><strong>Status:</strong> {{ order.status }}</p>
+            <p><strong>Status:</strong> {{ status_kind|title }}</p>
             <div class="payment-tracker">
                 <h2>Payment progress</h2>
                 <div class="payment-tracker-list">

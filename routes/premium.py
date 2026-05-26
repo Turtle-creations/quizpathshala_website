@@ -80,6 +80,7 @@ def premium_page():
         payment_ready=payment_service.checkout_ready(),
         checkout_blockers=checkout_blockers,
         payment_config_issues=payment_service.get_missing_configuration(),
+        payment_mode_note=payment_service.payment_mode_note(),
         premium_status=payment_service.premium_status_text(user),
         premium_benefits=PREMIUM_BENEFITS,
         bot_url=BOT_URL,
@@ -122,6 +123,7 @@ def payment_page(order_id: str):
         plan=plan,
         checkout_options=json.dumps(checkout_options),
         public_base_url=PUBLIC_BASE_URL.rstrip("/") or request.url_root.rstrip("/"),
+        payment_mode_note=payment_service.payment_mode_note(),
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
@@ -204,8 +206,8 @@ def payment_status_page(order_id: str):
         detail = order.get("error_reason") or "Please review the failed step below."
     elif has_pending:
         title = "Payment status"
-        message = "Payment verification is in progress."
-        detail = "Premium activation is completed only after the Razorpay webhook confirms a captured payment."
+        message = "Payment submitted, waiting for confirmation."
+        detail = "The browser callback was received. Premium will activate only after the Razorpay payment.captured webhook is verified on the server."
     else:
         title = "Payment status"
         message = "Premium has been activated."
@@ -261,10 +263,10 @@ def payment_success():
             logger.warning("payment_failed | order_id=%s payment_id=%s reason=callback_signature_failed", order_id, payment_id)
     return _render_payment_tracker(
         order_id=order_id,
-        page_title="Payment Received",
-        title="Payment Received",
-        message="Your payment details were received.",
-        detail="Premium activation is completed only after the Razorpay webhook confirms a captured payment.",
+        page_title="Payment Submitted",
+        title="Payment Submitted",
+        message="Payment submitted, waiting for confirmation.",
+        detail="Your payment details were received from Razorpay. Premium will activate only after the server verifies a payment.captured webhook.",
         verified=verified,
     )
 
@@ -289,8 +291,8 @@ def payment_cancel():
         order_id=order_id,
         page_title="Payment Cancelled",
         title="Payment Cancelled",
-        message="The payment was not completed.",
-        detail="You can return to the premium page and try again whenever you are ready.",
+        message="The checkout was closed before payment confirmation.",
+        detail="No premium access was activated. You can return to the premium page and start a new payment attempt when ready.",
         verified=False,
     )
 

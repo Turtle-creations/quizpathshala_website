@@ -84,6 +84,7 @@ CANONICAL_URL = os.getenv("CANONICAL_URL", "").rstrip("/")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", CANONICAL_URL or "")
 
 PAYMENT_MODE = (os.getenv("PAYMENT_MODE") or "disabled").strip().lower()
+PAYMENT_LIVE_ENABLED = os.getenv("PAYMENT_LIVE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 PAYMENT_WEBHOOK_SECRET = (

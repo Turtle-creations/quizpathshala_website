@@ -13,7 +13,9 @@
     <div class="container narrow">
         <div class="text-page">
             <p>Secure payment is handled by Razorpay. Premium is activated only after a valid captured-payment webhook reaches the server.</p>
-            <p>Use the button below to open Razorpay test checkout when you are ready.</p>
+            <p>{{ payment_mode_note }}</p>
+            <p>Use the button below to open Razorpay checkout only when you are ready to test this order.</p>
+            <p>In test mode, real UPI apps may fail. Use Razorpay test cards or other supported Razorpay test methods.</p>
             <button class="button button-primary" id="pay-btn">Pay Now</button>
             <p id="payment-debug-message" class="helper-text" aria-live="polite"></p>
         </div>
@@ -24,6 +26,7 @@
 <script>
 const options = {{ checkout_options|safe }};
 const debugMessage = document.getElementById("payment-debug-message");
+let paymentSubmitted = false;
 
 async function logClientEvent(eventName, details) {
     try {
@@ -40,6 +43,8 @@ async function logClientEvent(eventName, details) {
 }
 
 options.handler = function (response) {
+    paymentSubmitted = true;
+    debugMessage.textContent = "Payment submitted. Waiting for server confirmation.";
     const form = document.createElement("form");
     form.method = "POST";
     form.action = "{{ public_base_url }}/payment/success";
@@ -55,14 +60,20 @@ options.handler = function (response) {
 };
 options.modal = {
     ondismiss: function () {
+        if (paymentSubmitted) {
+            return;
+        }
         debugMessage.textContent = "Checkout was closed before payment completion.";
         logClientEvent("checkout_cancelled", {
             reason: "checkout_cancelled"
+        }).finally(function () {
+            window.location.href = "{{ public_base_url }}/payment/cancel?razorpay_order_id={{ order.order_id }}";
         });
     }
 };
 const rzp = new Razorpay(options);
 rzp.on("payment.failed", function (response) {
+    paymentSubmitted = false;
     const reason = encodeURIComponent(response.error && (response.error.description || response.error.code) || "payment_failed");
     const paymentId = encodeURIComponent(
         response.error && response.error.metadata && response.error.metadata.payment_id
@@ -80,6 +91,7 @@ rzp.on("payment.failed", function (response) {
 document.getElementById("pay-btn").addEventListener("click", async function (event) {
     event.preventDefault();
     debugMessage.textContent = "";
+    paymentSubmitted = false;
     await logClientEvent("pay_button_clicked");
     try {
         rzp.open();

@@ -10,6 +10,7 @@ import httpx
 from config import (
     BOT_USERNAME,
     PAYMENT_MODE,
+    PAYMENT_LIVE_ENABLED,
     PUBLIC_BASE_URL,
     RAZORPAY_KEY_ID,
     RAZORPAY_KEY_SECRET,
@@ -46,8 +47,17 @@ class PaymentService:
     def is_test_mode(self) -> bool:
         return PAYMENT_MODE == "test"
 
+    def is_live_mode(self) -> bool:
+        return PAYMENT_MODE == "live"
+
     def validate_test_mode(self) -> None:
         if not self.is_test_mode():
+            if self.is_live_mode():
+                raise ValueError(
+                    "Live payment is disabled for this build. "
+                    "Set PAYMENT_MODE=test for Razorpay test checkout. "
+                    "Only enable live later with PAYMENT_MODE=live and PAYMENT_LIVE_ENABLED=true."
+                )
             raise ValueError(
                 f"Payment mode '{PAYMENT_MODE or 'disabled'}' is not allowed. "
                 "Set PAYMENT_MODE=test to use the test payment environment."
@@ -62,6 +72,24 @@ class PaymentService:
         if not (RAZORPAY_KEY_SECRET or "").strip():
             blockers.append("RAZORPAY_KEY_SECRET is missing")
         return blockers
+
+    def payment_mode_note(self) -> str:
+        if self.is_test_mode():
+            return (
+                "Test mode is active. Real UPI apps can fail in Razorpay test mode, "
+                "so use Razorpay test cards or supported test methods while verifying the flow."
+            )
+        if self.is_live_mode() and not PAYMENT_LIVE_ENABLED:
+            return (
+                "Live mode was requested but is still blocked. "
+                "This build keeps checkout in test mode unless PAYMENT_LIVE_ENABLED=true is set explicitly."
+            )
+        if self.is_live_mode():
+            return (
+                "Live mode has been explicitly enabled through environment settings. "
+                "Keep it disabled until production rollout is approved."
+            )
+        return "Payments are disabled until PAYMENT_MODE=test is configured."
 
     def checkout_ready(self) -> bool:
         return not self.get_checkout_blockers()

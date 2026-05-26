@@ -171,7 +171,9 @@ class PaymentEnvironmentTests(unittest.TestCase):
 
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Open Test Checkout", body)
+        self.assertIn("Continue to Payment", body)
+        self.assertIn("Real UPI apps can fail in Razorpay test mode", body)
+        self.assertIn("Razorpay test cards", body)
         self.assertNotIn("Checkout Unavailable", body)
 
     def test_premium_page_shows_exact_disabled_reason(self):
@@ -216,6 +218,8 @@ class PaymentEnvironmentTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("Pay Now", body)
+        self.assertIn("real UPI apps may fail", body)
+        self.assertIn("/payment/cancel?razorpay_order_id=order_test_no_auto_open_001", body)
         self.assertNotIn("window.addEventListener(\"load\"", body)
 
     def test_payment_client_event_marks_checkout_opened_after_click(self):
@@ -276,6 +280,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(callback_response.status_code, 200)
         callback_body = callback_response.get_data(as_text=True)
         self.assertIn("Payment progress", callback_body)
+        self.assertIn("Payment submitted, waiting for confirmation.", callback_body)
         self.assertIn("Callback received", callback_body)
         self.assertIn("Webhook received", callback_body)
         callback_order = payment_service.get_order(created_order["order_id"])
@@ -411,7 +416,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIsNotNone(processed_rows)
         self.assertEqual(int(processed_rows["duplicate_count"] or 0), 1)
 
-    def test_posting_plan_redirects_to_payment_page_with_auto_open_checkout(self):
+    def test_posting_plan_redirects_to_manual_payment_page(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
         response_payload = self._order_response(
             order_id="order_test_open_checkout_001",
@@ -434,9 +439,40 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIn("pay-btn", body)
         self.assertIn("rzp.open();", body)
         self.assertNotIn("window.addEventListener(\"load\"", body)
-        self.assertIn("rzp.open();", body)
+        self.assertIn("Pay Now", body)
         saved_order = payment_service.get_order("order_test_open_checkout_001")
         self.assertFalse(bool(saved_order["checkout_opened_at"]))
+
+    def test_cancelled_checkout_marks_order_cancelled(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-cancelled@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_cancelled_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            created_order = web_payment_service.create_order(int(user["user_id"]), "month_1")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            cancelled_response = client.get(
+                "/payment/cancel",
+                query_string={"razorpay_order_id": created_order["order_id"]},
+            )
+
+        self.assertEqual(cancelled_response.status_code, 200)
+        cancelled_body = cancelled_response.get_data(as_text=True)
+        self.assertIn("Payment Cancelled", cancelled_body)
+        self.assertIn("checkout was closed before payment confirmation", cancelled_body)
+        saved_order = payment_service.get_order(created_order["order_id"])
+        self.assertEqual(saved_order["status"], "cancelled")
+        self.assertEqual(saved_order["callback_status"], "cancelled")
+        self.assertEqual(saved_order["failure_reason"], "checkout_cancelled")
 
     def test_failed_payment_does_not_activate_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-failed@example.com")
@@ -542,9 +578,11 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertTrue(matching_order["updated_at"])
 
     def test_non_test_payment_mode_is_blocked(self):
-        with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"):
+        with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"), mock.patch(
+            "services.payment_service_db.PAYMENT_LIVE_ENABLED", False
+        ):
             self.assertIn("PAYMENT_MODE must be set to test", payment_service.get_missing_configuration())
-            with self.assertRaisesRegex(ValueError, "PAYMENT_MODE=test"):
+            with self.assertRaisesRegex(ValueError, "Live payment is disabled for this build"):
                 payment_service.validate_test_mode()
 
 

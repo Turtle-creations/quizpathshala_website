@@ -19,6 +19,8 @@
                 {% endfor %}
             </ul>
             <p>Payments are processed securely through Razorpay from the website. Premium is never activated from the browser alone and becomes active only after server-side webhook verification.</p>
+            <p>{{ payment_mode_note }}</p>
+            <p>For test verification, prefer Razorpay test cards and supported test methods instead of real UPI apps.</p>
             <p>Telegram remains available as a companion channel for support and continuity at <a href="{{ bot_url }}" target="_blank" rel="noopener">@QuizPathshala_bot</a>.</p>
         </div>
 
@@ -35,7 +37,7 @@
                     {% if payment_ready %}
                     <form accept-charset="UTF-8" method="post">
                         <input type="hidden" name="plan_type" value="{{ item.key }}">
-                        <button class="button button-primary" type="submit">Open Test Checkout</button>
+                        <button class="button button-primary" type="submit">Continue to Payment</button>
                     </form>
                     {% else %}
                     <button class="button button-primary" type="button" disabled>Checkout Unavailable</button>
