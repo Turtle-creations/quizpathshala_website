@@ -1,31 +1,33 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="section">
-    <div class="container narrow">
-        <div class="quiz-topline">
+<section class="section quiz-play-section">
+    <div class="container narrow quiz-play-shell">
+        <div class="quiz-topline quiz-topline-play">
             <div>
                 <span class="eyebrow">Playing {{ current_set.title if current_set else "Quiz" }}</span>
                 <h1>Question {{ question.number }} of {{ question.total }}</h1>
                 <p>{{ quiz_session.correct_count }} correct | {{ quiz_session.wrong_count }} wrong | {{ quiz_session.skipped_count }} skipped | {{ "%.2f"|format((question.number - 1) / question.total * 100) }}% completed</p>
             </div>
-            <div class="timer-card">
+            <div class="timer-card quiz-timer-card">
                 <span>Time left</span>
                 <strong id="timer-value">{{ question.remaining_seconds }}</strong>
             </div>
         </div>
 
-        <article class="question-card">
-            <p class="question-text">{{ question.question_text }}</p>
+        <article class="question-card question-card-play">
+            <div class="quiz-play-question-body">
+                <p class="question-text">{{ question.question_text }}</p>
             {% if question.image_path %}
-            <img class="question-image" src="{{ url_for(media_route_name, relative_path=question.image_path) }}" alt="Question illustration">
+                <img class="question-image" src="{{ url_for(media_route_name, relative_path=question.image_path) }}" alt="Question illustration">
             {% endif %}
+            </div>
 
             {% if not active_result %}
-            <form accept-charset="UTF-8" method="post" id="quiz-form" data-quiz-answer-form="true" data-disable-on-submit="true">
+            <form accept-charset="UTF-8" method="post" id="quiz-form" class="quiz-play-form" data-quiz-answer-form="true" data-disable-on-submit="true">
                 <input type="hidden" name="action" value="answer" id="quiz-action">
                 <input type="hidden" name="selected_option" value="" id="selected-option-input">
-                <div class="option-list">
+                <div class="option-list option-list-play">
                     {% for option in question.options %}
                     <button class="option-button" type="button" data-option-index="{{ loop.index0 }}">
                         <span class="option-marker">{{ 'ABCD'[loop.index0] }}</span>
@@ -33,7 +35,7 @@
                     </button>
                     {% endfor %}
                 </div>
-                <div class="hero-actions">
+                <div class="quiz-play-actions">
                     {% if quiz_session.allow_resume %}
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='pause'">Pause</button>
                     {% endif %}
@@ -41,7 +43,7 @@
                     <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='submit'">Submit Quiz</button>
                 </div>
                 {% if quiz_session.pause_count %}
-                <p class="helper-text">Breaks used: {{ quiz_session.pause_count }}{% if quiz_session.max_breaks or quiz_session.max_breaks == 0 %} / {{ quiz_session.max_breaks }}{% endif %}</p>
+                <p class="helper-text quiz-play-helper">Breaks used: {{ quiz_session.pause_count }}{% if quiz_session.max_breaks or quiz_session.max_breaks == 0 %} / {{ quiz_session.max_breaks }}{% endif %}</p>
                 {% endif %}
             </form>
             {% else %}
@@ -69,11 +71,13 @@
                     {% endfor %}
                 </div>
             </div>
-            <form accept-charset="UTF-8" method="post" id="next-question-form" data-disable-on-submit="true">
-                <input type="hidden" name="action" value="next">
-                <button class="button button-primary" type="submit">Next Question</button>
-            </form>
-            <p class="helper-text">Moving to the next question automatically in 2 seconds.</p>
+            <div class="quiz-play-next-shell">
+                <form accept-charset="UTF-8" method="post" id="next-question-form" class="quiz-next-form" data-disable-on-submit="true">
+                    <input type="hidden" name="action" value="next">
+                    <button class="button button-primary" type="submit">Next Question</button>
+                </form>
+                <p class="helper-text quiz-play-helper">Moving to the next question automatically in 2 seconds.</p>
+            </div>
             {% endif %}
         </article>
     </div>
