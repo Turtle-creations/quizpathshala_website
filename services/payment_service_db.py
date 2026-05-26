@@ -1041,14 +1041,21 @@ class PaymentService:
 
         payment_row = None
         if payment_id or order_id:
+            where_clauses = []
+            params: list[str] = []
+            if payment_id:
+                where_clauses.append("payment_id = ?")
+                params.append(payment_id)
+            if order_id:
+                where_clauses.append("order_id = ?")
+                params.append(order_id)
             payment_row = conn.execute(
-                """
+                f"""
                 SELECT payment_id, order_id
                 FROM payments
-                WHERE (? IS NOT NULL AND payment_id = ?)
-                   OR (? IS NOT NULL AND order_id = ?)
+                WHERE {" OR ".join(where_clauses)}
                 """,
-                (payment_id, payment_id, order_id, order_id),
+                tuple(params),
             ).fetchone()
         if payment_row:
             return {

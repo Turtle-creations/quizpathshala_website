@@ -329,6 +329,88 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertTrue(saved_order["premium_activated_at"])
         self.assertEqual(saved_order["webhook_event_type"], "payment.captured")
 
+    def test_duplicate_payment_captured_webhook_returns_safe_200_without_double_activation(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-webhook-duplicate@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_duplicate_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            created_order = web_payment_service.create_order(int(user["user_id"]), "month_1")
+
+        payment_id = "pay_test_duplicate_001"
+        webhook_payload = {
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": payment_id,
+                        "order_id": created_order["order_id"],
+                        "amount": 29900,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        }
+        raw_body = json.dumps(webhook_payload).encode("utf-8")
+        webhook_signature = self._webhook_signature(raw_body)
+
+        first_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": webhook_signature,
+                "X-Razorpay-Event-Id": "evt_test_duplicate_001",
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.get_json()["status"], "processed")
+
+        first_user = user_service.get_user(int(user["user_id"]))
+        self.assertTrue(bool(first_user["is_premium"]))
+        first_expiry = first_user["premium_expires_at"]
+        self.assertTrue(first_expiry)
+
+        duplicate_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": webhook_signature,
+                "X-Razorpay-Event-Id": "evt_test_duplicate_002",
+            },
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        duplicate_payload = duplicate_response.get_json()
+        self.assertEqual(duplicate_payload["status"], "already_processed")
+        self.assertEqual(duplicate_payload["reason"], "payment_exists")
+
+        second_user = user_service.get_user(int(user["user_id"]))
+        self.assertTrue(bool(second_user["is_premium"]))
+        self.assertEqual(second_user["premium_expires_at"], first_expiry)
+
+        with database.connection() as conn:
+            payment_rows = conn.execute(
+                "SELECT COUNT(*) AS count FROM payments WHERE payment_id = ?",
+                (payment_id,),
+            ).fetchone()
+            processed_rows = conn.execute(
+                "SELECT duplicate_count FROM processed_webhooks WHERE event_id = ?",
+                ("evt_test_duplicate_002",),
+            ).fetchone()
+
+        self.assertEqual(int(payment_rows["count"]), 1)
+        self.assertIsNotNone(processed_rows)
+        self.assertEqual(int(processed_rows["duplicate_count"] or 0), 1)
+
     def test_posting_plan_redirects_to_payment_page_with_auto_open_checkout(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
         response_payload = self._order_response(
