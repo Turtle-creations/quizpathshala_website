@@ -39,6 +39,7 @@ PREMIUM_PRICE_PLAN_ALIASES = {
 logger = get_logger(__name__)
 MAX_WEBHOOK_DUPLICATE_COUNT = 5
 PREMIUM_ACTIVATION_SOURCE_WEBHOOK = "razorpay_webhook"
+_UNSET = object()
 
 
 class PaymentService:
@@ -64,6 +65,154 @@ class PaymentService:
 
     def checkout_ready(self) -> bool:
         return not self.get_checkout_blockers()
+
+    def _tracker_steps(self, order: dict) -> list[dict]:
+        terminal_failure = str(order.get("status") or "") in {"failed", "cancelled", "callback_signature_failed"}
+        callback_verified = bool(int(order.get("callback_verified") or 0))
+        webhook_verified = bool(int(order.get("webhook_verified") or 0))
+        payment_submitted = bool(order.get("payment_submitted_at"))
+        callback_received = bool(order.get("callback_received_at"))
+        webhook_received = bool(order.get("webhook_received_at"))
+        premium_activated = bool(order.get("premium_activated_at"))
+
+        steps = [
+            {"key": "order_created", "label": "Order created", "status": "success", "timestamp": order.get("created_at")},
+            {
+                "key": "checkout_opened",
+                "label": "Razorpay checkout opened",
+                "status": "success" if order.get("checkout_opened_at") else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("checkout_opened_at"),
+            },
+            {
+                "key": "payment_submitted",
+                "label": "Payment submitted",
+                "status": "success" if payment_submitted else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("payment_submitted_at"),
+            },
+            {
+                "key": "callback_received",
+                "label": "Callback received",
+                "status": "success" if callback_received and callback_verified else ("failed" if callback_received or terminal_failure else "pending"),
+                "timestamp": order.get("callback_received_at"),
+            },
+            {
+                "key": "webhook_received",
+                "label": "Webhook received",
+                "status": "success" if webhook_received and webhook_verified else ("failed" if webhook_received and not webhook_verified else ("failed" if terminal_failure else "pending")),
+                "timestamp": order.get("webhook_received_at"),
+            },
+            {
+                "key": "premium_activated",
+                "label": "Premium activated",
+                "status": "success" if premium_activated else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("premium_activated_at"),
+            },
+        ]
+        return steps
+
+    def order_tracker(self, order_id: str) -> dict | None:
+        order = self.get_order(order_id)
+        if not order:
+            return None
+        steps = self._tracker_steps(order)
+        has_pending = any(step["status"] == "pending" for step in steps)
+        has_failure = any(step["status"] == "failed" for step in steps)
+        return {
+            "order": order,
+            "steps": steps,
+            "has_pending": has_pending,
+            "has_failure": has_failure,
+            "status_kind": "failure" if has_failure else ("pending" if has_pending else "success"),
+        }
+
+    def _update_order_debug(
+        self,
+        order_id: str,
+        *,
+        status: str | object = _UNSET,
+        payment_id: str | object = _UNSET,
+        callback_verified: int | object = _UNSET,
+        webhook_verified: int | object = _UNSET,
+        error_reason: str | None | object = _UNSET,
+        checkout_opened_at: str | object = _UNSET,
+        payment_submitted_at: str | object = _UNSET,
+        callback_received_at: str | object = _UNSET,
+        webhook_received_at: str | object = _UNSET,
+        premium_activated_at: str | object = _UNSET,
+    ) -> dict | None:
+        assignments: list[str] = []
+        params: list[object] = []
+        for column_name, value in (
+            ("status", status),
+            ("payment_id", payment_id),
+            ("callback_verified", callback_verified),
+            ("webhook_verified", webhook_verified),
+            ("error_reason", error_reason),
+            ("checkout_opened_at", checkout_opened_at),
+            ("payment_submitted_at", payment_submitted_at),
+            ("callback_received_at", callback_received_at),
+            ("webhook_received_at", webhook_received_at),
+            ("premium_activated_at", premium_activated_at),
+        ):
+            if value is _UNSET:
+                continue
+            assignments.append(f"{column_name} = ?")
+            params.append(value)
+        assignments.append("updated_at = ?")
+        params.append(now_iso())
+        params.append(order_id)
+        with database.connection() as conn:
+            conn.execute(
+                f"UPDATE payment_orders SET {', '.join(assignments)} WHERE order_id = ?",
+                tuple(params),
+            )
+            row = conn.execute("SELECT * FROM payment_orders WHERE order_id = ?", (order_id,)).fetchone()
+        return dict(row) if row else None
+
+    def mark_checkout_opened(self, order_id: str) -> dict | None:
+        order = self.get_order(order_id)
+        if not order or order.get("checkout_opened_at"):
+            return order
+        return self._update_order_debug(order_id, checkout_opened_at=now_iso(), error_reason=None)
+
+    def mark_callback_received(
+        self,
+        order_id: str,
+        *,
+        payment_id: str | None,
+        verified: bool,
+        error_reason: str | None = None,
+        status: str | None = None,
+        submitted: bool = True,
+    ) -> dict | None:
+        return self._update_order_debug(
+            order_id,
+            payment_id=payment_id,
+            callback_verified=1 if verified else 0,
+            error_reason=error_reason,
+            callback_received_at=now_iso(),
+            payment_submitted_at=now_iso() if submitted else _UNSET,
+            status=status if status is not None else _UNSET,
+        )
+
+    def mark_webhook_received(
+        self,
+        order_id: str,
+        *,
+        payment_id: str | None,
+        verified: bool,
+        error_reason: str | None = None,
+    ) -> dict | None:
+        return self._update_order_debug(
+            order_id,
+            payment_id=payment_id,
+            webhook_verified=1 if verified else 0,
+            error_reason=error_reason,
+            webhook_received_at=now_iso(),
+        )
+
+    def mark_premium_activated(self, order_id: str) -> dict | None:
+        return self._update_order_debug(order_id, premium_activated_at=now_iso(), error_reason=None)
 
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
@@ -255,6 +404,7 @@ class PaymentService:
 
         expiry = self._compute_premium_expiry(user, plan_type)
         user_service.set_premium_expiry(user_id, expiry, True)
+        self.mark_premium_activated(order_data["order_id"])
         logger.info(
             "premium_activation_success | order_id=%s user_id=%s plan_type=%s final_order_status=%s expiry=%s",
             order_data.get("order_id"),
@@ -263,6 +413,7 @@ class PaymentService:
             order_data.get("status"),
             expiry,
         )
+        logger.info("premium_activated | order_id=%s user_id=%s plan_type=%s", order_data.get("order_id"), user_id, plan_type)
         return {
             "ok": True,
             "reason": "activated",
@@ -283,12 +434,13 @@ class PaymentService:
         status: str,
         payment_url: str,
     ):
+        created_at = now_iso()
         with database.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO payment_orders (
-                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(order_id) DO UPDATE SET
                     user_id = excluded.user_id,
                     plan_type = excluded.plan_type,
@@ -296,7 +448,7 @@ class PaymentService:
                     currency = excluded.currency,
                     status = excluded.status,
                     payment_url = excluded.payment_url,
-                    created_at = excluded.created_at
+                    updated_at = excluded.updated_at
                 """,
                 (
                     order_id,
@@ -306,12 +458,13 @@ class PaymentService:
                     currency,
                     status,
                     payment_url,
-                    now_iso(),
+                    created_at,
+                    created_at,
                 ),
             )
             saved_row = conn.execute(
                 """
-                SELECT order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
+                SELECT order_id, user_id, plan_type, amount, currency, status, payment_url, created_at, updated_at
                 FROM payment_orders
                 WHERE order_id = ?
                 """,
@@ -355,8 +508,8 @@ class PaymentService:
                 return order, False
 
             conn.execute(
-                "UPDATE payment_orders SET status = ? WHERE order_id = ?",
-                (status, order_id),
+                "UPDATE payment_orders SET status = ?, updated_at = ? WHERE order_id = ?",
+                (status, now_iso(), order_id),
             )
             updated_row = conn.execute(
                 "SELECT * FROM payment_orders WHERE order_id = ?",
@@ -373,6 +526,7 @@ class PaymentService:
             raise ValueError(f"Checkout unavailable: {'; '.join(checkout_blockers)}")
 
         plan = self.get_plan(plan_type)
+        logger.info("order_create_started | source=bot user_id=%s plan_type=%s", user_id, plan_type)
         logger.info(
             "premium_price_used_for_order | user_id=%s plan_type=%s amount_paise=%s amount_rupees=%s",
             user_id,
@@ -405,6 +559,7 @@ class PaymentService:
             status=order.get("status", "created"),
             payment_url=payment_url,
         )
+        logger.info("order_create_success | source=bot user_id=%s plan_type=%s order_id=%s", user_id, plan_type, order["id"])
 
         return {
             "order_id": order["id"],
@@ -419,6 +574,7 @@ class PaymentService:
         if checkout_blockers:
             raise ValueError(f"Checkout unavailable: {'; '.join(checkout_blockers)}")
 
+        logger.info("order_create_started | source=admin_test user_id=%s plan_type=test_order", user_id)
         payload = {
             "amount": 100,
             "currency": "INR",
@@ -444,6 +600,7 @@ class PaymentService:
             status=order.get("status", "created"),
             payment_url=payment_url,
         )
+        logger.info("order_create_success | source=admin_test user_id=%s plan_type=test_order order_id=%s", user_id, order["id"])
 
         return {
             "order_id": order["id"],
@@ -481,7 +638,7 @@ class PaymentService:
             )
             return None, "razorpay_missing_user_id"
 
-        payment_url = f"{PUBLIC_BASE_URL}/pay/{remote_order['id']}"
+        payment_url = f"{(PUBLIC_BASE_URL or '').rstrip('/')}/payment/{remote_order['id']}" if PUBLIC_BASE_URL else f"/payment/{remote_order['id']}"
         self._save_order_record(
             order_id=remote_order["id"],
             user_id=int(user_id_raw),
@@ -523,7 +680,7 @@ class PaymentService:
             )
             return None, "razorpay_missing_user_id"
 
-        payment_url = f"{PUBLIC_BASE_URL}/pay/{remote_order['id']}"
+        payment_url = f"{(PUBLIC_BASE_URL or '').rstrip('/')}/payment/{remote_order['id']}" if PUBLIC_BASE_URL else f"/payment/{remote_order['id']}"
         self._save_order_record(
             order_id=remote_order["id"],
             user_id=int(user_id_raw),
@@ -548,8 +705,8 @@ class PaymentService:
     def update_order_status(self, order_id: str, status: str):
         with database.connection() as conn:
             conn.execute(
-                "UPDATE payment_orders SET status = ? WHERE order_id = ?",
-                (status, order_id),
+                "UPDATE payment_orders SET status = ?, updated_at = ? WHERE order_id = ?",
+                (status, now_iso(), order_id),
             )
 
     async def fetch_razorpay_payment(self, payment_id: str) -> dict | None:
@@ -641,6 +798,13 @@ class PaymentService:
         amount = payment_entity.get("amount")
         currency = payment_entity.get("currency", "INR")
         payment_status = payment_entity.get("status")
+        logger.info(
+            "webhook_received | event_id=%s event=%s order_id=%s payment_id=%s",
+            event_id,
+            event_name,
+            order_id,
+            payment_id,
+        )
 
         if not payment_id or not order_id or amount is None:
             raise ValueError("Missing payment fields in webhook payload")
@@ -689,6 +853,7 @@ class PaymentService:
                     expected_amount,
                     amount,
                 )
+                self.mark_webhook_received(order_id, payment_id=payment_id, verified=False, error_reason="amount_mismatch")
                 raise ValueError("Payment amount does not match the saved order")
 
             plan_type = order_data["plan_type"]
@@ -746,9 +911,10 @@ class PaymentService:
                 ),
             )
             conn.execute(
-                "UPDATE payment_orders SET status = ? WHERE order_id = ?",
-                ("paid", order_id),
+                "UPDATE payment_orders SET status = ?, updated_at = ? WHERE order_id = ?",
+                ("paid", now_iso(), order_id),
             )
+        self.mark_webhook_received(order_id, payment_id=payment_id, verified=True, error_reason=None)
 
         activation_result = self.ensure_premium_active_for_order(
             order_id,

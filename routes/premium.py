@@ -16,6 +16,34 @@ premium_blueprint = Blueprint("premium", __name__)
 logger = get_logger(__name__)
 
 
+def _render_payment_tracker(
+    *,
+    order_id: str | None,
+    page_title: str,
+    title: str,
+    message: str,
+    detail: str,
+    verified: bool,
+):
+    tracker = payment_service.order_tracker(order_id) if order_id else None
+    order = tracker["order"] if tracker else None
+    return render_template(
+        "payment_status.html",
+        page_title=page_title,
+        status_kind=(tracker or {}).get("status_kind", "pending" if verified else "failure"),
+        title=title,
+        message=message,
+        detail=detail,
+        order=order,
+        verified=verified,
+        tracker_steps=(tracker or {}).get("steps", []),
+        auto_refresh=bool(tracker and tracker.get("has_pending") and not tracker.get("has_failure")),
+        status_url=url_for("premium.payment_status_page", order_id=order_id) if order_id else None,
+        bot_url=BOT_URL,
+        admin_authenticated=web_identity_service.is_admin_authenticated(),
+    )
+
+
 @premium_blueprint.route("/premium", methods=["GET", "POST"])
 @login_required
 def premium_page():
@@ -70,6 +98,7 @@ def payment_page(order_id: str):
         flash("This payment order does not belong to your account.", "error")
         return redirect(url_for("premium.premium_page"))
 
+    payment_service.mark_checkout_opened(order_id)
     plan = payment_service.get_plan(order["plan_type"])
     checkout_options = {
         "key": RAZORPAY_KEY_ID,
@@ -97,6 +126,42 @@ def payment_page(order_id: str):
     )
 
 
+@premium_blueprint.route("/payment/status/<order_id>")
+@login_required
+def payment_status_page(order_id: str):
+    user = web_identity_service.get_authenticated_user()
+    order = payment_service.get_order(order_id)
+    if not order:
+        flash("Invalid payment order.", "error")
+        return redirect(url_for("premium.premium_page"))
+    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.is_admin_authenticated():
+        flash("This payment order does not belong to your account.", "error")
+        return redirect(url_for("premium.premium_page"))
+    tracker = payment_service.order_tracker(order_id) or {}
+    has_failure = bool(tracker.get("has_failure"))
+    has_pending = bool(tracker.get("has_pending"))
+    if has_failure:
+        title = "Payment status"
+        message = "Payment could not be completed."
+        detail = order.get("error_reason") or "Please review the failed step below."
+    elif has_pending:
+        title = "Payment status"
+        message = "Payment verification is in progress."
+        detail = "Premium activation is completed only after the Razorpay webhook confirms a captured payment."
+    else:
+        title = "Payment status"
+        message = "Premium has been activated."
+        detail = "All required verification steps completed successfully."
+    return _render_payment_tracker(
+        order_id=order_id,
+        page_title="Payment Status",
+        title=title,
+        message=message,
+        detail=detail,
+        verified=bool(int(order.get("callback_verified") or 0)),
+    )
+
+
 @premium_blueprint.route("/payment/success", methods=["GET", "POST"])
 @login_required
 def payment_success():
@@ -106,6 +171,7 @@ def payment_success():
     order = payment_service.get_order(order_id) if order_id else None
     verified = False
     if order_id and payment_id and signature:
+        logger.info("checkout_callback_received | order_id=%s payment_id=%s", order_id, payment_id)
         verified = payment_service.verify_payment_signature(
             order_id=order_id,
             payment_id=payment_id,
@@ -113,19 +179,30 @@ def payment_success():
         )
         if verified:
             order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_verified")
+            payment_service.mark_callback_received(
+                order_id,
+                payment_id=payment_id,
+                verified=True,
+                error_reason=None,
+                status="callback_verified",
+            )
         else:
             order, _updated = payment_service.set_order_status_if_not_paid(order_id, "callback_signature_failed")
-    return render_template(
-        "payment_status.html",
+            payment_service.mark_callback_received(
+                order_id,
+                payment_id=payment_id,
+                verified=False,
+                error_reason="callback_signature_failed",
+                status="callback_signature_failed",
+            )
+            logger.warning("payment_failed | order_id=%s payment_id=%s reason=callback_signature_failed", order_id, payment_id)
+    return _render_payment_tracker(
+        order_id=order_id,
         page_title="Payment Received",
-        status_kind="pending" if not verified else "success",
         title="Payment Received",
         message="Your payment details were received.",
         detail="Premium activation is completed only after the Razorpay webhook confirms a captured payment.",
-        order=order,
         verified=verified,
-        bot_url=BOT_URL,
-        admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
 
@@ -135,17 +212,15 @@ def payment_cancel():
     order_id = request.args.get("razorpay_order_id")
     if order_id:
         payment_service.set_order_status_if_not_paid(order_id, "cancelled")
-    return render_template(
-        "payment_status.html",
+        payment_service._update_order_debug(order_id, error_reason="checkout_cancelled")
+        logger.warning("payment_failed | order_id=%s payment_id=%s reason=checkout_cancelled", order_id, None)
+    return _render_payment_tracker(
+        order_id=order_id,
         page_title="Payment Cancelled",
-        status_kind="failure",
         title="Payment Cancelled",
         message="The payment was not completed.",
         detail="You can return to the premium page and try again whenever you are ready.",
-        order=payment_service.get_order(order_id) if order_id else None,
         verified=False,
-        bot_url=BOT_URL,
-        admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
 
@@ -153,20 +228,26 @@ def payment_cancel():
 @login_required
 def payment_failed():
     order_id = request.args.get("razorpay_order_id")
+    payment_id = request.args.get("razorpay_payment_id")
     reason = request.args.get("reason") or "Payment verification failed before completion."
     if order_id:
+        logger.info("checkout_callback_received | order_id=%s payment_id=%s", order_id, payment_id)
         payment_service.set_order_status_if_not_paid(order_id, "failed")
-    return render_template(
-        "payment_status.html",
+        payment_service.mark_callback_received(
+            order_id,
+            payment_id=payment_id,
+            verified=False,
+            error_reason=reason,
+            status="failed",
+        )
+        logger.warning("payment_failed | order_id=%s payment_id=%s reason=%s", order_id, payment_id, reason)
+    return _render_payment_tracker(
+        order_id=order_id,
         page_title="Payment Failed",
-        status_kind="failure",
         title="Payment Failed",
         message="The payment could not be completed.",
         detail=reason,
-        order=payment_service.get_order(order_id) if order_id else None,
         verified=False,
-        bot_url=BOT_URL,
-        admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 
 
@@ -176,9 +257,11 @@ def razorpay_webhook():
     raw_body = request.get_data()
     signature = request.headers.get("X-Razorpay-Signature", "")
     event_id = request.headers.get("X-Razorpay-Event-Id")
+    logger.info("webhook_received | event_id=%s content_length=%s", event_id, len(raw_body or b""))
 
     if not payment_service.verify_webhook_signature(raw_body, signature):
         return jsonify({"detail": "Invalid webhook signature"}), 401
+    logger.info("webhook_signature_verified | event_id=%s", event_id)
 
     try:
         payload = json.loads(raw_body.decode("utf-8"))

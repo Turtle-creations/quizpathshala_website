@@ -44,7 +44,12 @@ options.modal = {
 const rzp = new Razorpay(options);
 rzp.on("payment.failed", function (response) {
     const reason = encodeURIComponent(response.error && (response.error.description || response.error.code) || "payment_failed");
-    window.location.href = "{{ public_base_url }}/payment/failed?razorpay_order_id={{ order.order_id }}&reason=" + reason;
+    const paymentId = encodeURIComponent(
+        response.error && response.error.metadata && response.error.metadata.payment_id
+            ? response.error.metadata.payment_id
+            : ""
+    );
+    window.location.href = "{{ public_base_url }}/payment/failed?razorpay_order_id={{ order.order_id }}&razorpay_payment_id=" + paymentId + "&reason=" + reason;
 });
 document.getElementById("pay-btn").addEventListener("click", function (event) {
     event.preventDefault();

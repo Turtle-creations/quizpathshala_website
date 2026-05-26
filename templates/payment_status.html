@@ -14,13 +14,47 @@
         <div class="text-page">
             {% if order %}
             <p><strong>Order ID:</strong> {{ order.order_id }}</p>
+            <p><strong>Payment ID:</strong> {{ order.payment_id or "Pending" }}</p>
             <p><strong>Status:</strong> {{ order.status }}</p>
+            <div class="payment-tracker">
+                <h2>Payment progress</h2>
+                <div class="payment-tracker-list">
+                    {% for step in tracker_steps %}
+                    <article class="payment-step payment-step-{{ step.status }}">
+                        <div>
+                            <h3>{{ step.label }}</h3>
+                            <p class="payment-step-status">{{ step.status|title }}</p>
+                        </div>
+                        <p class="payment-step-time">
+                            {% if step.timestamp %}
+                            {{ step.timestamp|format_user_datetime(current_user) }}
+                            {% else %}
+                            Waiting for update
+                            {% endif %}
+                        </p>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% if order.error_reason %}
+                <p><strong>Reason:</strong> {{ order.error_reason }}</p>
+                {% endif %}
+            </div>
             {% endif %}
             <div class="hero-actions">
                 <a class="button button-primary" href="/premium">Back to Premium</a>
+                {% if status_url %}
+                <a class="button button-secondary" href="{{ status_url }}">Refresh Status</a>
+                {% endif %}
                 <a class="button button-secondary" href="{{ bot_url }}" target="_blank" rel="noopener">Telegram Companion</a>
             </div>
         </div>
     </div>
 </section>
+{% if auto_refresh and status_url %}
+<script>
+window.setTimeout(function () {
+    window.location.href = "{{ status_url }}";
+}, 5000);
+</script>
+{% endif %}
 {% endblock %}

@@ -360,23 +360,28 @@
         <div class="data-card" id="orders-section" data-admin-panel tabindex="-1">
             <div class="admin-panel-header">
                 <div>
-                    <h2>Orders</h2>
+                    <h2>Payment Debug Logs</h2>
                     <p class="helper-text">Latest first. Uses the same date filter as payment logs.</p>
                 </div>
             </div>
             <table>
-                <thead><tr><th>When</th><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr></thead>
+                <thead><tr><th>Order ID</th><th>Payment ID</th><th>User</th><th>Plan</th><th>Status</th><th>Callback</th><th>Webhook</th><th>Error</th><th>Created</th><th>Updated</th></tr></thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
-                        <td>{{ order.created_at|format_user_datetime(current_user) }}</td>
                         <td>{{ order.order_id }}</td>
+                        <td>{{ order.payment_id or "-" }}</td>
                         <td><a href="{{ url_for('admin.admin_user_detail', user_id=order.user_id) }}">{{ order.full_name or order.user_id }}</a></td>
                         <td>{{ order.plan_type }}</td>
                         <td>{{ order.status }}</td>
+                        <td>{{ "Yes" if order.callback_verified else "No" }}</td>
+                        <td>{{ "Yes" if order.webhook_verified else "No" }}</td>
+                        <td>{{ order.error_reason or "-" }}</td>
+                        <td>{{ order.created_at|format_user_datetime(current_user) }}</td>
+                        <td>{{ order.updated_at|format_user_datetime(current_user) if order.updated_at else "-" }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="5">No orders yet.</td></tr>
+                    <tr><td colspan="10">No payment debug logs yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

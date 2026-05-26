@@ -7,6 +7,10 @@ from config import PUBLIC_BASE_URL, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
 from db.database import database
 from services.payment_service_db import payment_service
 from services.user_service_db import now_iso
+from utils.logging_utils import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class WebPaymentService:
@@ -27,6 +31,7 @@ class WebPaymentService:
             raise ValueError(f"Checkout unavailable: {'; '.join(checkout_blockers)}")
 
         plan = payment_service.get_plan(normalized_plan_type)
+        logger.info("order_create_started | source=web user_id=%s plan_type=%s", user_id, normalized_plan_type)
         payload = {
             "amount": plan["amount"],
             "currency": "INR",
@@ -43,12 +48,13 @@ class WebPaymentService:
             order = response.json()
 
         payment_url = f"{PUBLIC_BASE_URL.rstrip('/')}/payment/{order['id']}" if PUBLIC_BASE_URL else f"/payment/{order['id']}"
+        created_at = now_iso()
         with database.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO payment_orders (
-                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(order_id) DO UPDATE SET
                     user_id = excluded.user_id,
                     plan_type = excluded.plan_type,
@@ -56,7 +62,7 @@ class WebPaymentService:
                     currency = excluded.currency,
                     status = excluded.status,
                     payment_url = excluded.payment_url,
-                    created_at = excluded.created_at
+                    updated_at = excluded.updated_at
                 """,
                 (
                     order["id"],
@@ -66,9 +72,11 @@ class WebPaymentService:
                     order.get("currency", "INR"),
                     order.get("status", "created"),
                     payment_url,
-                    now_iso(),
+                    created_at,
+                    created_at,
                 ),
             )
+        logger.info("order_create_success | source=web user_id=%s plan_type=%s order_id=%s", user_id, normalized_plan_type, order["id"])
 
         return {
             "order_id": order["id"],

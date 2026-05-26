@@ -136,6 +136,16 @@ class Database:
                 self._ensure_column(conn, "processed_webhooks", "order_id", "TEXT")
                 self._ensure_column(conn, "processed_webhooks", "last_seen_at", "TEXT")
                 self._ensure_column(conn, "processed_webhooks", "duplicate_count", "INTEGER NOT NULL DEFAULT 0")
+                self._ensure_column(conn, "payment_orders", "payment_id", "TEXT")
+                self._ensure_column(conn, "payment_orders", "callback_verified", "INTEGER NOT NULL DEFAULT 0")
+                self._ensure_column(conn, "payment_orders", "webhook_verified", "INTEGER NOT NULL DEFAULT 0")
+                self._ensure_column(conn, "payment_orders", "error_reason", "TEXT")
+                self._ensure_column(conn, "payment_orders", "checkout_opened_at", "TEXT")
+                self._ensure_column(conn, "payment_orders", "payment_submitted_at", "TEXT")
+                self._ensure_column(conn, "payment_orders", "callback_received_at", "TEXT")
+                self._ensure_column(conn, "payment_orders", "webhook_received_at", "TEXT")
+                self._ensure_column(conn, "payment_orders", "premium_activated_at", "TEXT")
+                self._ensure_column(conn, "payment_orders", "updated_at", "TEXT NOT NULL DEFAULT ''")
                 self._ensure_column(conn, "password_reset_requests", "requested_ip", "TEXT")
                 self._ensure_column(conn, "password_reset_requests", "otp_verified_at", "TEXT")
                 self._ensure_column(conn, "password_reset_requests", "used_at", "TEXT")
@@ -169,6 +179,16 @@ class Database:
             self._ensure_column(conn, "processed_webhooks", "order_id", "TEXT")
             self._ensure_column(conn, "processed_webhooks", "last_seen_at", "TEXT")
             self._ensure_column(conn, "processed_webhooks", "duplicate_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "payment_orders", "payment_id", "TEXT")
+            self._ensure_column(conn, "payment_orders", "callback_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "payment_orders", "webhook_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "payment_orders", "error_reason", "TEXT")
+            self._ensure_column(conn, "payment_orders", "checkout_opened_at", "TEXT")
+            self._ensure_column(conn, "payment_orders", "payment_submitted_at", "TEXT")
+            self._ensure_column(conn, "payment_orders", "callback_received_at", "TEXT")
+            self._ensure_column(conn, "payment_orders", "webhook_received_at", "TEXT")
+            self._ensure_column(conn, "payment_orders", "premium_activated_at", "TEXT")
+            self._ensure_column(conn, "payment_orders", "updated_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "password_reset_requests", "requested_ip", "TEXT")
             self._ensure_column(conn, "password_reset_requests", "otp_verified_at", "TEXT")
             self._ensure_column(conn, "password_reset_requests", "used_at", "TEXT")
@@ -507,8 +527,18 @@ class Database:
                 amount INTEGER NOT NULL,
                 currency TEXT NOT NULL,
                 status TEXT NOT NULL,
+                payment_id TEXT,
+                callback_verified INTEGER NOT NULL DEFAULT 0,
+                webhook_verified INTEGER NOT NULL DEFAULT 0,
+                error_reason TEXT,
+                checkout_opened_at TEXT,
+                payment_submitted_at TEXT,
+                callback_received_at TEXT,
+                webhook_received_at TEXT,
+                premium_activated_at TEXT,
                 payment_url TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """,
             """
@@ -711,8 +741,18 @@ class Database:
             amount INTEGER NOT NULL,
             currency TEXT NOT NULL,
             status TEXT NOT NULL,
+            payment_id TEXT,
+            callback_verified INTEGER NOT NULL DEFAULT 0,
+            webhook_verified INTEGER NOT NULL DEFAULT 0,
+            error_reason TEXT,
+            checkout_opened_at TEXT,
+            payment_submitted_at TEXT,
+            callback_received_at TEXT,
+            webhook_received_at TEXT,
+            premium_activated_at TEXT,
             payment_url TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS payments (

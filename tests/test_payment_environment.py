@@ -131,6 +131,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIsNotNone(saved_order)
         self.assertEqual(saved_order["status"], "created")
         self.assertEqual(saved_order["plan_type"], "week_1")
+        self.assertTrue(saved_order["updated_at"])
 
     def test_payment_order_upsert_updates_existing_row(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-upsert@example.com")
@@ -156,6 +157,7 @@ class PaymentEnvironmentTests(unittest.TestCase):
         saved_order = payment_service.get_order("order_test_upsert_001")
         self.assertIsNotNone(saved_order)
         self.assertEqual(saved_order["status"], "callback_verified")
+        self.assertTrue(saved_order["updated_at"])
 
     def test_premium_page_enables_checkout_in_test_mode_with_checkout_keys(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-premium-page@example.com")
@@ -224,8 +226,13 @@ class PaymentEnvironmentTests(unittest.TestCase):
             )
 
         self.assertEqual(callback_response.status_code, 200)
+        callback_body = callback_response.get_data(as_text=True)
+        self.assertIn("Payment progress", callback_body)
+        self.assertIn("Callback received", callback_body)
+        self.assertIn("Webhook received", callback_body)
         callback_order = payment_service.get_order(created_order["order_id"])
         self.assertEqual(callback_order["status"], "callback_verified")
+        self.assertEqual(int(callback_order["callback_verified"] or 0), 1)
         self.assertFalse(bool(user_service.get_user(int(user["user_id"]))["is_premium"]))
 
         webhook_payload = {
@@ -270,6 +277,8 @@ class PaymentEnvironmentTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNotNone(payment_row)
         self.assertEqual(payment_row["status"], "captured")
+        self.assertEqual(int(saved_order["webhook_verified"] or 0), 1)
+        self.assertTrue(saved_order["premium_activated_at"])
 
     def test_posting_plan_redirects_to_payment_page_with_auto_open_checkout(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
@@ -293,6 +302,8 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIn("https://checkout.razorpay.com/v1/checkout.js", body)
         self.assertIn("window.addEventListener(\"load\"", body)
         self.assertIn("rzp.open();", body)
+        saved_order = payment_service.get_order("order_test_open_checkout_001")
+        self.assertTrue(saved_order["checkout_opened_at"])
 
     def test_failed_payment_does_not_activate_premium(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-failed@example.com")
@@ -315,15 +326,22 @@ class PaymentEnvironmentTests(unittest.TestCase):
                 "/payment/failed",
                 query_string={
                     "razorpay_order_id": created_order["order_id"],
+                    "razorpay_payment_id": "pay_test_failed_001",
                     "reason": "payment_failed",
                 },
             )
 
         self.assertEqual(failed_response.status_code, 200)
+        failed_body = failed_response.get_data(as_text=True)
+        self.assertIn("Payment progress", failed_body)
+        self.assertIn("Failed", failed_body)
         refreshed_user = user_service.get_user(int(user["user_id"]))
         self.assertFalse(bool(refreshed_user["is_premium"]))
         saved_order = payment_service.get_order(created_order["order_id"])
         self.assertEqual(saved_order["status"], "failed")
+        self.assertEqual(saved_order["payment_id"], "pay_test_failed_001")
+        self.assertEqual(saved_order["error_reason"], "payment_failed")
+        self.assertEqual(int(saved_order["callback_verified"] or 0), 0)
 
     def test_admin_payment_logs_show_saved_entry(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-admin-log@example.com")
@@ -376,8 +394,13 @@ class PaymentEnvironmentTests(unittest.TestCase):
 
         payment_ids = {item["payment_id"] for item in dashboard["payments"]}
         order_ids = {item["order_id"] for item in dashboard["orders"]}
+        matching_order = next(item for item in dashboard["orders"] if item["order_id"] == created_order["order_id"])
         self.assertIn("pay_test_admin_001", payment_ids)
         self.assertIn(created_order["order_id"], order_ids)
+        self.assertEqual(matching_order["payment_id"], "pay_test_admin_001")
+        self.assertEqual(int(matching_order["callback_verified"] or 0), 0)
+        self.assertEqual(int(matching_order["webhook_verified"] or 0), 1)
+        self.assertTrue(matching_order["updated_at"])
 
     def test_non_test_payment_mode_is_blocked(self):
         with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"):
