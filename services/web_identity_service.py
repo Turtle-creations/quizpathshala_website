@@ -99,11 +99,6 @@ class WebIdentityService:
         if cached_user is not self._CACHE_MISS:
             return dict(cached_user) if cached_user else {}
 
-        snapshot = self.get_authenticated_user_snapshot()
-        if self._snapshot_can_serve_authenticated_user(snapshot, user_id):
-            self._set_cached_authenticated_user(snapshot)
-            return dict(snapshot)
-
         user = user_service.get_user(int(user_id))
         if not user:
             self.logout_user()
@@ -114,6 +109,10 @@ class WebIdentityService:
         self._set_cached_authenticated_user(dict(user))
         self._set_cached_authenticated_snapshot(snapshot)
         return dict(user)
+
+    def refresh_authenticated_user(self) -> dict:
+        self._clear_cached_authenticated_user()
+        return self.get_authenticated_user()
 
     def is_authenticated(self) -> bool:
         return bool(session.get(self.AUTH_USER_KEY))
@@ -149,6 +148,11 @@ class WebIdentityService:
         return bool(snapshot and (self._is_privileged_role(role) or snapshot.get("is_admin"))) or bool(session.get(self.ADMIN_KEY))
 
     def get_authenticated_user_snapshot(self) -> dict:
+        user_id = session.get(self.AUTH_USER_KEY)
+        if user_id:
+            user = self.get_authenticated_user()
+            return self._build_user_snapshot(user) if user else {}
+
         cached_snapshot = self._get_cached_authenticated_snapshot()
         if cached_snapshot is not self._CACHE_MISS:
             return dict(cached_snapshot) if cached_snapshot else {}

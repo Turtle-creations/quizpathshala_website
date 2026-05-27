@@ -3,6 +3,7 @@ from functools import wraps
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from config import SUPER_ADMIN_EMAIL, SUPPORT_TELEGRAM
+from services.premium_service_db import premium_service
 from services.web_identity_service import web_identity_service
 from services.web_password_reset_service import web_password_reset_service
 from services.web_quiz_service import web_quiz_service
@@ -261,7 +262,7 @@ def logout():
 @auth_blueprint.route("/dashboard")
 @login_required
 def dashboard():
-    user = web_identity_service.get_authenticated_user()
+    user = web_identity_service.refresh_authenticated_user()
     if _is_admin_role(user):
         return redirect(url_for("admin.admin_dashboard"))
 
@@ -270,6 +271,7 @@ def dashboard():
         "dashboard.html",
         page_title="Dashboard",
         user=user,
+        premium_display=premium_service.display_details(user),
         performance=performance,
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=False,

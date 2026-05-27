@@ -173,6 +173,8 @@ class PaymentService:
         return steps
 
     def current_step(self, order: dict) -> str:
+        if self._is_payment_failed(order):
+            return "payment_failed"
         if self._has_premium_failure(order):
             return "premium_activation_failed"
         if str(order.get("premium_result") or "") == "extended":
@@ -205,6 +207,11 @@ class PaymentService:
 
     def _has_premium_failure(self, order: dict) -> bool:
         return self._is_payment_complete(order) and str(order.get("status") or "") == "paid_activation_failed"
+
+    def _is_payment_failed(self, order: dict) -> bool:
+        return str(order.get("status") or "") in {"failed", "cancelled", "callback_signature_failed"} or str(
+            order.get("payment_status") or ""
+        ) == "failed"
 
     def order_tracker(self, order_id: str) -> dict | None:
         order = self.get_order(order_id)
@@ -316,6 +323,7 @@ class PaymentService:
             error_reason=error_reason,
             callback_received_at=now_iso(),
             payment_submitted_at=now_iso() if submitted else _UNSET,
+            payment_status="captured" if verified else "failed",
             status=status if status is not None else _UNSET,
         )
 
@@ -355,6 +363,35 @@ class PaymentService:
 
     def mark_premium_activated(self, order_id: str) -> dict | None:
         return self.mark_premium_completed(order_id, result="activated")
+
+    def mark_payment_failed(
+        self,
+        order_id: str,
+        *,
+        payment_id: str | None,
+        reason: str,
+        raw_callback_data: str | None = None,
+        callback_status: str | None = "failed",
+        webhook_status: str | None = None,
+        event_type: str | None = None,
+    ) -> dict | None:
+        logger.warning("payment_failure_reason_saved | order_id=%s payment_id=%s reason=%s", order_id, payment_id, reason)
+        return self._update_order_debug(
+            order_id,
+            status="failed",
+            payment_id=payment_id,
+            payment_status="failed",
+            callback_verified=0 if callback_status else _UNSET,
+            callback_status=callback_status if callback_status is not None else _UNSET,
+            webhook_status=webhook_status if webhook_status is not None else _UNSET,
+            webhook_event_type=event_type if event_type is not None else _UNSET,
+            failure_reason=reason,
+            last_error=reason,
+            error_reason=reason,
+            raw_callback_data=raw_callback_data if raw_callback_data is not None else _UNSET,
+            callback_received_at=now_iso() if callback_status is not None else _UNSET,
+            webhook_received_at=now_iso() if webhook_status is not None else _UNSET,
+        )
 
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
@@ -1129,6 +1166,107 @@ class PaymentService:
             "activation_result": activation_result,
         }
 
+    def process_failed_payment(self, event_id: str, payload: dict):
+        event_name = payload.get("event")
+        logger.info("webhook_event_type | event_id=%s event=%s", event_id, event_name)
+        if event_name != "payment.failed":
+            logger.info("Ignoring webhook event | event_id=%s event=%s", event_id, event_name)
+            return {"status": "ignored", "reason": "unsupported_event"}
+
+        payment_entity = (
+            payload.get("payload", {})
+            .get("payment", {})
+            .get("entity", {})
+        )
+        payment_id = payment_entity.get("id")
+        order_id = payment_entity.get("order_id")
+        payment_status = payment_entity.get("status") or "failed"
+        error_description = (
+            payment_entity.get("error_description")
+            or payment_entity.get("error_reason")
+            or payment_entity.get("error_code")
+            or payload.get("error", {}).get("description")
+            or "payment_failed"
+        )
+        logger.warning(
+            "payment_failed_webhook_received | event_id=%s order_id=%s payment_id=%s reason=%s",
+            event_id,
+            order_id,
+            payment_id,
+            error_description,
+        )
+
+        if not payment_id or not order_id:
+            raise ValueError("Missing payment fields in failed webhook payload")
+
+        with database.connection() as conn:
+            duplicate_status = self._get_duplicate_status(conn, event_id=event_id, payment_id=payment_id, order_id=order_id)
+            order = conn.execute(
+                "SELECT * FROM payment_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if not order:
+                raise ValueError("Order not found for failed payment")
+
+            order_data = dict(order)
+            if duplicate_status["duplicate"]:
+                self._record_duplicate_attempt(
+                    conn,
+                    event_id=event_id,
+                    payment_id=payment_id,
+                    order_id=order_id,
+                    existing_event=duplicate_status["existing_event"],
+                )
+                logger.info(
+                    "Duplicate failed-payment webhook already processed | event_id=%s order_id=%s payment_id=%s reason=%s duplicate_count=%s",
+                    event_id,
+                    order_id,
+                    payment_id,
+                    duplicate_status["reason"],
+                    duplicate_status["duplicate_count"],
+                )
+                return {
+                    "status": "already_processed",
+                    "reason": duplicate_status["reason"],
+                    "user_id": order_data["user_id"],
+                    "plan_type": order_data["plan_type"],
+                }
+
+            conn.execute(
+                """
+                INSERT INTO processed_webhooks (
+                    event_id, payment_id, order_id, received_at, last_seen_at, duplicate_count
+                ) VALUES (?, ?, ?, ?, ?, 0)
+                """,
+                (event_id, payment_id, order_id, now_iso(), now_iso()),
+            )
+
+        self.mark_payment_failed(
+            order_id,
+            payment_id=payment_id,
+            reason=str(error_description),
+            raw_callback_data=json.dumps(payload),
+            callback_status=None,
+            webhook_status="verified",
+            event_type=event_name,
+        )
+        return {
+            "status": "failed",
+            "reason": str(error_description),
+            "payment_status": payment_status,
+            "user_id": order_data["user_id"],
+            "plan_type": order_data["plan_type"],
+        }
+
+    def process_payment_webhook(self, event_id: str, payload: dict):
+        event_name = payload.get("event")
+        if event_name == "payment.captured":
+            return self.process_captured_payment(event_id, payload)
+        if event_name == "payment.failed":
+            return self.process_failed_payment(event_id, payload)
+        logger.info("Ignoring webhook event | event_id=%s event=%s", event_id, event_name)
+        return {"status": "ignored", "reason": "unsupported_event"}
+
     def check_processed_webhook(self, event_id: str, payment_id: str | None, order_id: str | None) -> dict:
         with database.connection() as conn:
             duplicate_status = self._get_duplicate_status(
@@ -1228,9 +1366,9 @@ class PaymentService:
 
     def premium_status_text(self, user: dict) -> str:
         expiry = parse_utc_datetime(user.get("premium_expires_at"))
-        if user.get("is_premium") and expiry and expiry > datetime.now(timezone.utc):
-            return f"💎 Premium active until {expiry.replace(microsecond=0).isoformat()} UTC"
-        return "🆓 Free plan active"
+        if expiry and expiry > datetime.now(timezone.utc):
+            return f"Plan: Premium | Expiry: {expiry.replace(microsecond=0).isoformat()} UTC"
+        return "Plan: Premium" if user.get("is_premium") and not user.get("premium_expires_at") else "Plan: Free"
 
 
 payment_service = PaymentService()

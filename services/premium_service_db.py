@@ -10,30 +10,40 @@ class PremiumService:
         return self._is_user_premium(user)
 
     def _is_user_premium(self, user: dict) -> bool:
-        if not user or not user.get("is_premium"):
+        if not user:
             return False
 
         expiry = user.get("premium_expires_at")
-        if not expiry:
+        expiry_dt = parse_utc_datetime(expiry) if expiry else None
+        if expiry_dt and expiry_dt > datetime.now(timezone.utc):
             return True
-
-        expiry_dt = parse_utc_datetime(expiry)
-        if not expiry_dt:
-            return False
-        return expiry_dt > datetime.now(timezone.utc)
+        return bool(user.get("is_premium")) and not expiry
 
     def status_text(self, user: dict) -> str:
-        if not user:
-            return "Free"
+        details = self.display_details(user)
+        if details["plan"] == "Premium":
+            return f"Plan: Premium | Expiry: {details['expiry'] or 'Active'}"
+        if details["expiry"]:
+            return f"Plan: Free | Last expiry: {details['expiry']}"
+        return "Plan: Free"
 
-        if not self._is_user_premium(user):
-            expiry = user.get("premium_expires_at")
-            if expiry:
-                return f"Expired on {expiry.replace('T', ' ')} UTC"
-            return "Free"
+    def display_details(self, user: dict) -> dict:
+        if not user:
+            return {"plan": "Free", "expiry": None, "is_active": False}
 
         expiry = user.get("premium_expires_at")
-        return f"Premium until {expiry.replace('T', ' ')} UTC" if expiry else "Premium"
+        active = self._is_user_premium(user)
+        if active:
+            return {
+                "plan": "Premium",
+                "expiry": expiry.replace("T", " ") + " UTC" if expiry else None,
+                "is_active": True,
+            }
+        return {
+            "plan": "Free",
+            "expiry": expiry.replace("T", " ") + " UTC" if expiry else None,
+            "is_active": False,
+        }
 
     def remaining_free_questions(self, user: dict, daily_limit: int) -> int:
         user = user_service.reset_daily_counter_if_needed(user)

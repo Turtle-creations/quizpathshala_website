@@ -702,8 +702,66 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(saved_order["failure_reason"], "payment_failed")
         self.assertEqual(saved_order["last_error"], "payment_failed")
         self.assertEqual(saved_order["error_reason"], "payment_failed")
+        self.assertEqual(saved_order["payment_status"], "failed")
         self.assertEqual(int(saved_order["callback_verified"] or 0), 0)
         self.assertEqual(saved_order["callback_status"], "failed")
+        self.assertEqual(payment_service.current_step(saved_order), "payment_failed")
+
+    def test_failed_payment_webhook_marks_final_failed_state(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-failed-webhook@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_failed_webhook_001",
+            amount=9900,
+            user_id=int(user["user_id"]),
+            plan_type="week_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            created_order = web_payment_service.create_order(int(user["user_id"]), "week_1")
+
+        webhook_payload = {
+            "event": "payment.failed",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_test_failed_webhook_001",
+                        "order_id": created_order["order_id"],
+                        "status": "failed",
+                        "error_code": "BAD_REQUEST_ERROR",
+                        "error_description": "Incorrect UPI PIN",
+                    }
+                }
+            },
+        }
+        raw_body = json.dumps(webhook_payload).encode("utf-8")
+        webhook_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": self._webhook_signature(raw_body),
+                "X-Razorpay-Event-Id": "evt_test_failed_webhook_001",
+            },
+        )
+
+        self.assertEqual(webhook_response.status_code, 200)
+        response_json = webhook_response.get_json()
+        self.assertEqual(response_json["status"], "failed")
+        self.assertEqual(response_json["reason"], "Incorrect UPI PIN")
+
+        saved_order = payment_service.get_order(created_order["order_id"])
+        self.assertEqual(saved_order["status"], "failed")
+        self.assertEqual(saved_order["payment_status"], "failed")
+        self.assertEqual(saved_order["webhook_status"], "verified")
+        self.assertEqual(saved_order["webhook_event_type"], "payment.failed")
+        self.assertEqual(saved_order["failure_reason"], "Incorrect UPI PIN")
+        self.assertEqual(saved_order["last_error"], "Incorrect UPI PIN")
+        self.assertEqual(payment_service.current_step(saved_order), "payment_failed")
+        refreshed_user = user_service.get_user(int(user["user_id"]))
+        self.assertFalse(bool(refreshed_user["is_premium"]))
 
     def test_admin_payment_logs_show_saved_entry(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-admin-log@example.com")
