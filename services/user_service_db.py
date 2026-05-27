@@ -342,8 +342,12 @@ class UserService:
         return self.is_supreme_admin(user_id) or int(user_id) in ADMINS
 
     def ensure_user(self, tg_user) -> dict:
+        from services.telegram_link_service import telegram_link_service
+
+        linked_user_id = telegram_link_service.resolve_website_user_id(tg_user.id)
+        resolved_user_id = int(linked_user_id) if linked_user_id is not None else int(tg_user.id)
         return self.ensure_profile(
-            user_id=tg_user.id,
+            user_id=resolved_user_id,
             username=tg_user.username,
             full_name=tg_user.full_name,
         )

@@ -1,10 +1,11 @@
-from telegram import Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from keyboards.app_keyboards import back_to_main_keyboard, exam_keyboard, main_menu_keyboard
 from handlers.support_v1 import cancel_support_flow, start_support_flow
 from services.exam_service_db import exam_service
+from services.telegram_link_service import telegram_link_service
 from services.user_service_db import user_service
 from utils.formatters import format_help_text, format_leaderboard, format_profile
 from utils.logging_utils import get_logger
@@ -14,7 +15,25 @@ logger = get_logger(__name__)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = user_service.ensure_user(update.effective_user)
+    start_args = list(getattr(context, "args", []) or [])
+    link_token = start_args[0].strip() if start_args else ""
+    if link_token:
+        link_result = telegram_link_service.consume_start_token(link_token, update.effective_user)
+        if link_result.get("ok"):
+            user = user_service.ensure_user(update.effective_user)
+            await update.effective_message.reply_text(
+                (
+                    "Your Telegram account is now linked to your website account.\n\n"
+                    "Optional: share your phone number below if you want a secondary verification method."
+                ),
+                reply_markup=_optional_contact_keyboard(),
+            )
+        else:
+            await update.effective_message.reply_text(link_result["message"])
+            user = user_service.ensure_user(update.effective_user)
+    else:
+        user = user_service.ensure_user(update.effective_user)
+
     has_admin_access = user_service.is_admin(user["user_id"])
     logger.info(
         "Start command admin check | current_user_id=%s is_admin=%s",
@@ -29,6 +48,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         parse_mode=ParseMode.HTML,
         reply_markup=main_menu_keyboard(has_admin_access),
+    )
+
+
+def _optional_contact_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("Share phone number (optional)", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )
 
 

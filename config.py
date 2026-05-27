@@ -82,6 +82,7 @@ SUPPORT_TELEGRAM = os.getenv("SUPPORT_TELEGRAM", "https://t.me/QuizPathshala_bot
 SUPPORT_HOURS = os.getenv("SUPPORT_HOURS", "Monday to Saturday, 10:00 AM to 7:00 PM IST")
 CANONICAL_URL = os.getenv("CANONICAL_URL", "").rstrip("/")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", CANONICAL_URL or "")
+TELEGRAM_LINK_TOKEN_TTL_MINUTES = 10
 
 PAYMENT_MODE = (os.getenv("PAYMENT_MODE") or "disabled").strip().lower()
 PAYMENT_LIVE_ENABLED = os.getenv("PAYMENT_LIVE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}

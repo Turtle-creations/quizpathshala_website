@@ -16,6 +16,19 @@
             <p><strong>Name:</strong> {{ user.full_name or "QuizPathshala User" }}</p>
             <p><strong>Email:</strong> {{ user.email or user.login_identifier or "Not set" }}</p>
             <p><strong>Phone:</strong> {{ user.phone_number or "Not set" }}</p>
+            <p>
+                <strong>Telegram:</strong>
+                {% if telegram_link %}
+                    Linked to
+                    {% if telegram_link.telegram_username %}
+                        @{{ telegram_link.telegram_username }}
+                    {% else %}
+                        user ID {{ telegram_link.telegram_user_id }}
+                    {% endif %}
+                {% else %}
+                    Not linked
+                {% endif %}
+            </p>
             <p><strong>Plan:</strong> {{ premium_display.plan }}</p>
             <p><strong>Expiry:</strong> {{ premium_display.expiry or "-" }}</p>
             <p><strong>Bot support:</strong> <a href="{{ support_telegram }}" target="_blank" rel="noreferrer">Open Telegram</a></p>
@@ -38,6 +51,42 @@
                 <a class="button button-secondary" href="{{ support_telegram }}" target="_blank" rel="noreferrer">Open Telegram Support</a>
                 <a class="button button-secondary" href="{{ url_for('auth.logout') }}">Logout</a>
             </div>
+        </article>
+        <article class="info-card">
+            <h2>Link Telegram</h2>
+            <p>Connect your website account to the Telegram bot so both surfaces use the same account and progress.</p>
+            {% if telegram_link %}
+            <p>
+                Current link:
+                {% if telegram_link.telegram_username %}
+                    @{{ telegram_link.telegram_username }}
+                {% else %}
+                    Telegram user ID {{ telegram_link.telegram_user_id }}
+                {% endif %}
+            </p>
+            {% else %}
+            <p>No Telegram account is linked yet.</p>
+            {% endif %}
+            <div class="hero-actions">
+                <form method="post" action="{{ url_for('auth.dashboard_telegram_link') }}">
+                    <button class="button button-primary" type="submit">
+                        {% if telegram_link %}Link a Different Telegram Account{% else %}Link Telegram{% endif %}
+                    </button>
+                </form>
+                <form method="post" action="{{ url_for('auth.dashboard_telegram_link') }}">
+                    <input type="hidden" name="allow_relink" value="1">
+                    <button class="button button-secondary" type="submit">Confirm Relink</button>
+                </form>
+            </div>
+            <p>
+                Telegram will open
+                {% if telegram_bot_username %}
+                    <strong>@{{ telegram_bot_username }}</strong>
+                {% else %}
+                    the QuizPathshala bot
+                {% endif %}
+                with a one-time link token that expires in 10 minutes.
+            </p>
         </article>
     </div>
 </section>

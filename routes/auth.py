@@ -2,8 +2,9 @@ from functools import wraps
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
-from config import SUPER_ADMIN_EMAIL, SUPPORT_TELEGRAM
+from config import BOT_USERNAME, SUPER_ADMIN_EMAIL, SUPPORT_TELEGRAM
 from services.premium_service_db import premium_service
+from services.telegram_link_service import telegram_link_service
 from services.web_identity_service import web_identity_service
 from services.web_password_reset_service import web_password_reset_service
 from services.web_quiz_service import web_quiz_service
@@ -267,12 +268,35 @@ def dashboard():
         return redirect(url_for("admin.admin_dashboard"))
 
     performance = web_quiz_service.user_performance_snapshot(user["user_id"])
+    telegram_link = telegram_link_service.get_website_link(user["user_id"])
     return render_template(
         "dashboard.html",
         page_title="Dashboard",
         user=user,
         premium_display=premium_service.display_details(user),
         performance=performance,
+        telegram_link=telegram_link,
+        telegram_bot_username=(BOT_USERNAME or "").lstrip("@"),
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=False,
     )
+
+
+@auth_blueprint.route("/dashboard/telegram-link", methods=["POST"])
+@login_required
+def dashboard_telegram_link():
+    user = web_identity_service.refresh_authenticated_user()
+    if _is_admin_role(user):
+        return redirect(url_for("admin.admin_dashboard"))
+
+    allow_relink = request.form.get("allow_relink", "").strip() == "1"
+    result = telegram_link_service.create_link_request(int(user["user_id"]), allow_relink=allow_relink)
+    if not result.get("ok"):
+        flash(result.get("error") or "Could not start Telegram linking right now.", "error")
+        return redirect(url_for("auth.dashboard"))
+
+    if allow_relink:
+        flash("Confirmation accepted. Finish linking from Telegram within 10 minutes.", "success")
+    else:
+        flash("Open Telegram and finish linking within 10 minutes.", "success")
+    return redirect(result["bot_start_url"])

@@ -228,6 +228,34 @@ class Database:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+                    token_id TEXT PRIMARY KEY,
+                    website_user_id BIGINT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at TEXT NOT NULL,
+                    allow_relink INTEGER NOT NULL DEFAULT 0,
+                    used_at TEXT,
+                    consumed_by_telegram_user_id BIGINT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_account_links (
+                    website_user_id BIGINT NOT NULL UNIQUE,
+                    telegram_user_id BIGINT NOT NULL UNIQUE,
+                    telegram_username TEXT,
+                    telegram_full_name TEXT,
+                    phone_number TEXT,
+                    linked_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (website_user_id, telegram_user_id)
+                )
+                """
+            )
 
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login_identifier ON users(login_identifier) WHERE login_identifier IS NOT NULL"
@@ -294,6 +322,15 @@ class Database:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_premium_plans_active_period ON premium_plans(is_active, billing_period, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_user_created ON telegram_link_tokens(website_user_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_expires_at ON telegram_link_tokens(expires_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_telegram_account_links_telegram_user ON telegram_account_links(telegram_user_id)"
             )
             self._backfill_exam_set_positions(conn)
         self._initialized = True
@@ -662,6 +699,30 @@ class Database:
                 password_reset_at TEXT
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+                token_id TEXT PRIMARY KEY,
+                website_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                allow_relink INTEGER NOT NULL DEFAULT 0,
+                used_at TEXT,
+                consumed_by_telegram_user_id BIGINT,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS telegram_account_links (
+                website_user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
+                telegram_user_id BIGINT NOT NULL UNIQUE,
+                telegram_username TEXT,
+                telegram_full_name TEXT,
+                phone_number TEXT,
+                linked_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (website_user_id, telegram_user_id)
+            )
+            """,
         ]
         for statement in statements:
             conn.execute(statement)
@@ -876,6 +937,30 @@ class Database:
             reset_expires_at TEXT,
             password_reset_at TEXT,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+            token_id TEXT PRIMARY KEY,
+            website_user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            allow_relink INTEGER NOT NULL DEFAULT 0,
+            used_at TEXT,
+            consumed_by_telegram_user_id INTEGER,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (website_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_account_links (
+            website_user_id INTEGER NOT NULL UNIQUE,
+            telegram_user_id INTEGER NOT NULL UNIQUE,
+            telegram_username TEXT,
+            telegram_full_name TEXT,
+            phone_number TEXT,
+            linked_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (website_user_id, telegram_user_id),
+            FOREIGN KEY (website_user_id) REFERENCES users(user_id) ON DELETE CASCADE
         );
         """
 
