@@ -95,51 +95,59 @@ class PaymentService:
         return not self.get_checkout_blockers()
 
     def _tracker_steps(self, order: dict) -> list[dict]:
-        terminal_failure = str(order.get("status") or "") in {"failed", "cancelled", "callback_signature_failed"}
+        status_text = str(order.get("status") or "")
         callback_verified = bool(int(order.get("callback_verified") or 0))
         webhook_verified = bool(int(order.get("webhook_verified") or 0))
         payment_submitted = bool(order.get("payment_submitted_at"))
         callback_received = bool(order.get("callback_received_at"))
         webhook_received = bool(order.get("webhook_received_at"))
-        premium_activated = bool(order.get("premium_activated_at"))
+        payment_complete = self._is_payment_complete(order)
+        premium_complete = self._is_premium_complete(order)
+        premium_failure = self._has_premium_failure(order)
+        terminal_failure = status_text in {"failed", "cancelled", "callback_signature_failed", "paid_activation_failed"} or premium_failure
+        premium_label = "Premium extended" if str(order.get("premium_result") or "") == "extended" else "Premium activated"
 
         steps = [
             {"key": "order_created", "label": "Order created", "status": "success", "timestamp": order.get("created_at")},
             {
                 "key": "checkout_opened",
                 "label": "Razorpay checkout opened",
-                "status": "success" if order.get("checkout_opened_at") else ("failed" if terminal_failure else "pending"),
-                "timestamp": order.get("checkout_opened_at"),
+                "status": "success" if order.get("checkout_opened_at") or payment_complete else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("checkout_opened_at") or (order.get("webhook_received_at") if payment_complete else None),
             },
             {
                 "key": "payment_submitted",
                 "label": "Payment submitted",
-                "status": "success" if payment_submitted else ("failed" if terminal_failure else "pending"),
-                "timestamp": order.get("payment_submitted_at"),
+                "status": "success" if payment_submitted or payment_complete else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("payment_submitted_at") or (order.get("webhook_received_at") if payment_complete else None),
             },
             {
                 "key": "callback_received",
                 "label": "Callback received",
-                "status": "success" if callback_received and callback_verified else ("failed" if callback_received or terminal_failure else "pending"),
-                "timestamp": order.get("callback_received_at"),
+                "status": "success" if (callback_received and callback_verified) or payment_complete else ("failed" if callback_received or terminal_failure else "pending"),
+                "timestamp": order.get("callback_received_at") or (order.get("webhook_received_at") if payment_complete else None),
             },
             {
                 "key": "webhook_received",
                 "label": "Webhook received",
-                "status": "success" if webhook_received and webhook_verified else ("failed" if webhook_received and not webhook_verified else ("failed" if terminal_failure else "pending")),
-                "timestamp": order.get("webhook_received_at"),
+                "status": "success" if payment_complete else ("failed" if webhook_received and not webhook_verified else ("failed" if terminal_failure else "pending")),
+                "timestamp": order.get("webhook_received_at") or (order.get("premium_activated_at") if payment_complete else None),
             },
             {
                 "key": "premium_activated",
-                "label": "Premium activated",
-                "status": "success" if premium_activated else ("failed" if terminal_failure else "pending"),
-                "timestamp": order.get("premium_activated_at"),
+                "label": premium_label,
+                "status": "success" if premium_complete else ("failed" if terminal_failure else "pending"),
+                "timestamp": order.get("premium_activated_at") or (order.get("webhook_received_at") if payment_complete and not premium_failure else None),
             },
         ]
         return steps
 
     def current_step(self, order: dict) -> str:
-        if order.get("premium_activated_at"):
+        if self._has_premium_failure(order):
+            return "premium_activation_failed"
+        if str(order.get("premium_result") or "") == "extended":
+            return "premium_extended"
+        if self._is_premium_complete(order):
             return "premium_activated"
         if str(order.get("webhook_status") or "") == "failed":
             return "webhook_failed"
@@ -154,6 +162,19 @@ class PaymentService:
         if order.get("checkout_opened_at"):
             return "checkout_opened"
         return "order_created"
+
+    def _is_payment_complete(self, order: dict) -> bool:
+        return bool(int(order.get("webhook_verified") or 0)) and str(order.get("webhook_event_type") or "") == "payment.captured"
+
+    def _is_premium_complete(self, order: dict) -> bool:
+        return bool(order.get("premium_activated_at")) or (
+            self._is_payment_complete(order)
+            and str(order.get("status") or "") in {"paid", "captured"}
+            and not self._has_premium_failure(order)
+        )
+
+    def _has_premium_failure(self, order: dict) -> bool:
+        return self._is_payment_complete(order) and str(order.get("status") or "") == "paid_activation_failed"
 
     def order_tracker(self, order_id: str) -> dict | None:
         order = self.get_order(order_id)
@@ -186,6 +207,8 @@ class PaymentService:
         raw_callback_data: str | None | object = _UNSET,
         webhook_event_type: str | None | object = _UNSET,
         error_reason: str | None | object = _UNSET,
+        payment_status: str | None | object = _UNSET,
+        premium_result: str | None | object = _UNSET,
         checkout_opened_at: str | object = _UNSET,
         payment_submitted_at: str | object = _UNSET,
         callback_received_at: str | object = _UNSET,
@@ -206,6 +229,8 @@ class PaymentService:
             ("raw_callback_data", raw_callback_data),
             ("webhook_event_type", webhook_event_type),
             ("error_reason", error_reason),
+            ("payment_status", payment_status),
+            ("premium_result", premium_result),
             ("checkout_opened_at", checkout_opened_at),
             ("payment_submitted_at", payment_submitted_at),
             ("callback_received_at", callback_received_at),
@@ -282,17 +307,24 @@ class PaymentService:
             last_error=error_reason,
             webhook_event_type=event_type,
             error_reason=error_reason,
+            payment_status="captured" if verified else _UNSET,
             webhook_received_at=now_iso(),
         )
 
-    def mark_premium_activated(self, order_id: str) -> dict | None:
+    def mark_premium_completed(self, order_id: str, *, result: str) -> dict | None:
         return self._update_order_debug(
             order_id,
+            status="paid",
+            payment_status="captured",
+            premium_result=result,
             premium_activated_at=now_iso(),
             error_reason=None,
             failure_reason=None,
             last_error=None,
         )
+
+    def mark_premium_activated(self, order_id: str) -> dict | None:
+        return self.mark_premium_completed(order_id, result="activated")
 
     def _normalize_price_plan_type(self, plan_type: str) -> str | None:
         return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
@@ -477,32 +509,29 @@ class PaymentService:
             return {"ok": False, "reason": "user_not_found"}
 
         premium_active = bool(user.get("is_premium")) and bool(user.get("premium_expires_at"))
+        was_active_and_unexpired = False
         if premium_active:
             expiry_dt = parse_utc_datetime(user["premium_expires_at"])
-            if expiry_dt and expiry_dt > datetime.now(timezone.utc):
-                return {
-                    "ok": True,
-                    "reason": "already_active",
-                    "activated_now": False,
-                    "expiry": user["premium_expires_at"],
-                }
-
+            was_active_and_unexpired = bool(expiry_dt and expiry_dt > datetime.now(timezone.utc))
         expiry = self._compute_premium_expiry(user, plan_type)
         user_service.set_premium_expiry(user_id, expiry, True)
-        self.mark_premium_activated(order_data["order_id"])
+        premium_result = "extended" if was_active_and_unexpired else "activated"
+        self.mark_premium_completed(order_data["order_id"], result=premium_result)
         logger.info(
-            "premium_activation_success | order_id=%s user_id=%s plan_type=%s final_order_status=%s expiry=%s",
+            "premium_activation_success | order_id=%s user_id=%s plan_type=%s final_order_status=%s expiry=%s result=%s",
             order_data.get("order_id"),
             user_id,
             plan_type,
             order_data.get("status"),
             expiry,
+            premium_result,
         )
-        logger.info("premium_activated | order_id=%s user_id=%s plan_type=%s", order_data.get("order_id"), user_id, plan_type)
+        logger.info("premium_activated | order_id=%s user_id=%s plan_type=%s result=%s", order_data.get("order_id"), user_id, plan_type, premium_result)
         return {
             "ok": True,
-            "reason": "activated",
-            "activated_now": True,
+            "reason": premium_result,
+            "activated_now": not was_active_and_unexpired,
+            "extended_now": was_active_and_unexpired,
             "expiry": expiry,
             "user_id": user_id,
             "plan_type": plan_type,
@@ -701,7 +730,30 @@ class PaymentService:
                 "SELECT * FROM payment_orders WHERE order_id = ?",
                 (order_id,),
             ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        order = dict(row)
+        reconciled = self._reconcile_verified_captured_order(order)
+        return reconciled or order
+
+    def _reconcile_verified_captured_order(self, order: dict) -> dict | None:
+        if not self._is_payment_complete(order):
+            return None
+        if self._has_premium_failure(order):
+            return None
+
+        updates: dict[str, object] = {}
+        if str(order.get("status") or "") not in {"paid", "captured"}:
+            updates["status"] = "paid"
+        if str(order.get("payment_status") or "") != "captured":
+            updates["payment_status"] = "captured"
+        if not order.get("premium_activated_at"):
+            updates["premium_activated_at"] = order.get("webhook_received_at") or now_iso()
+        if not order.get("premium_result"):
+            updates["premium_result"] = "activated"
+        if not updates:
+            return None
+        return self._update_order_debug(order["order_id"], **updates)
 
     async def get_order_with_fallback(self, order_id: str) -> tuple[dict | None, str]:
         order = self.get_order(order_id)
@@ -1003,8 +1055,8 @@ class PaymentService:
                 ),
             )
             conn.execute(
-                "UPDATE payment_orders SET status = ?, updated_at = ? WHERE order_id = ?",
-                ("paid", now_iso(), order_id),
+                "UPDATE payment_orders SET status = ?, payment_status = ?, updated_at = ? WHERE order_id = ?",
+                ("paid", "captured", now_iso(), order_id),
             )
         self.mark_webhook_received(
             order_id,
@@ -1018,6 +1070,15 @@ class PaymentService:
             order_id,
             source=PREMIUM_ACTIVATION_SOURCE_WEBHOOK,
         )
+        if should_activate_premium and not activation_result.get("ok"):
+            self._update_order_debug(
+                order_id,
+                status="paid_activation_failed",
+                payment_status="captured",
+                failure_reason=str(activation_result.get("reason") or "premium_activation_failed"),
+                last_error=str(activation_result.get("reason") or "premium_activation_failed"),
+                error_reason=str(activation_result.get("reason") or "premium_activation_failed"),
+            )
         if not should_activate_premium:
             logger.info(
                 "Webhook payment recorded without premium activation | event_id=%s order_id=%s plan_type=%s",

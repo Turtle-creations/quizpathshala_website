@@ -365,7 +365,7 @@
                 </div>
             </div>
             <table>
-                <thead><tr><th>Order ID</th><th>Payment ID</th><th>User</th><th>Plan</th><th>Current Step</th><th>Callback Status</th><th>Webhook Status</th><th>Failure Reason</th><th>Last Error</th><th>Raw Callback Data</th><th>Webhook Event</th><th>Created</th><th>Updated</th></tr></thead>
+                <thead><tr><th>Order ID</th><th>Payment ID</th><th>User</th><th>Plan</th><th>Order Status</th><th>Payment Status</th><th>Current Step</th><th>Callback Status</th><th>Webhook Status</th><th>Failure Reason</th><th>Last Error</th><th>Raw Callback Data</th><th>Webhook Event</th><th>Created</th><th>Updated</th></tr></thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
@@ -373,6 +373,8 @@
                         <td>{{ order.payment_id or "-" }}</td>
                         <td><a href="{{ url_for('admin.admin_user_detail', user_id=order.user_id) }}">{{ order.full_name or order.user_id }}</a></td>
                         <td>{{ order.plan_type }}</td>
+                        <td>{{ order.status or "-" }}</td>
+                        <td>{{ order.payment_status or "-" }}</td>
                         <td>{{ order.current_step or "-" }}</td>
                         <td>{{ order.callback_status or "-" }}</td>
                         <td>{{ order.webhook_status or "-" }}</td>
@@ -384,7 +386,7 @@
                         <td>{{ order.updated_at|format_user_datetime(current_user) if order.updated_at else "-" }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="13">No payment debug logs yet.</td></tr>
+                    <tr><td colspan="15">No payment debug logs yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

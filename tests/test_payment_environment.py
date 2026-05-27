@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 TEST_EMAIL_PREFIX = "codex-payment-test-"
@@ -334,6 +335,126 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertTrue(saved_order["premium_activated_at"])
         self.assertEqual(saved_order["webhook_event_type"], "payment.captured")
 
+    def test_webhook_verified_captured_status_page_is_not_pending(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-webhook-status@example.com")
+        response_payload = self._order_response(
+            order_id="order_test_webhook_status_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            created_order = web_payment_service.create_order(int(user["user_id"]), "month_1")
+
+        webhook_payload = {
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_test_webhook_status_001",
+                        "order_id": created_order["order_id"],
+                        "amount": 29900,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        }
+        raw_body = json.dumps(webhook_payload).encode("utf-8")
+        webhook_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": self._webhook_signature(raw_body),
+                "X-Razorpay-Event-Id": "evt_test_webhook_status_001",
+            },
+        )
+        self.assertEqual(webhook_response.status_code, 200)
+
+        saved_order = payment_service.get_order(created_order["order_id"])
+        self.assertEqual(saved_order["status"], "paid")
+        self.assertEqual(saved_order["payment_status"], "captured")
+        self.assertEqual(saved_order["current_step"] if "current_step" in saved_order else payment_service.current_step(saved_order), "premium_activated")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            status_response = client.get(f"/payment/status/{created_order['order_id']}")
+
+        self.assertEqual(status_response.status_code, 200)
+        status_body = status_response.get_data(as_text=True)
+        self.assertIn("Premium has been activated.", status_body)
+        self.assertNotIn("Payment submitted, waiting for confirmation.", status_body)
+
+    def test_existing_premium_user_is_extended_once_after_captured_webhook(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-extended@example.com")
+        existing_expiry = (datetime.now(timezone.utc) + timedelta(days=5)).replace(microsecond=0).isoformat()
+        user_service.set_premium_expiry(int(user["user_id"]), existing_expiry, True)
+        response_payload = self._order_response(
+            order_id="order_test_extended_001",
+            amount=29900,
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+        )
+
+        with mock.patch(
+            "services.web_payment_service.httpx.Client",
+            side_effect=lambda *args, **kwargs: _FakeHttpxClient(response_payload, *args, **kwargs),
+        ):
+            created_order = web_payment_service.create_order(int(user["user_id"]), "month_1")
+
+        webhook_payload = {
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_test_extended_001",
+                        "order_id": created_order["order_id"],
+                        "amount": 29900,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        }
+        raw_body = json.dumps(webhook_payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": self._webhook_signature(raw_body),
+        }
+
+        first_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={**headers, "X-Razorpay-Event-Id": "evt_test_extended_001"},
+        )
+        self.assertEqual(first_response.status_code, 200)
+
+        first_user = user_service.get_user(int(user["user_id"]))
+        first_expiry = first_user["premium_expires_at"]
+        self.assertGreater(datetime.fromisoformat(first_expiry), datetime.fromisoformat(existing_expiry))
+
+        saved_order = payment_service.get_order(created_order["order_id"])
+        self.assertEqual(saved_order["status"], "paid")
+        self.assertEqual(saved_order["payment_status"], "captured")
+        self.assertEqual(saved_order["premium_result"], "extended")
+        self.assertEqual(payment_service.current_step(saved_order), "premium_extended")
+
+        duplicate_response = app.test_client().post(
+            "/payment/webhook",
+            data=raw_body,
+            headers={**headers, "X-Razorpay-Event-Id": "evt_test_extended_002"},
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(duplicate_response.get_json()["status"], "already_processed")
+
+        second_user = user_service.get_user(int(user["user_id"]))
+        self.assertEqual(second_user["premium_expires_at"], first_expiry)
+
     def test_duplicate_payment_captured_webhook_returns_safe_200_without_double_activation(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-webhook-duplicate@example.com")
         response_payload = self._order_response(
@@ -415,6 +536,33 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertEqual(int(payment_rows["count"]), 1)
         self.assertIsNotNone(processed_rows)
         self.assertEqual(int(processed_rows["duplicate_count"] or 0), 1)
+
+    def test_stale_verified_captured_order_is_reconciled_from_pending(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-reconcile@example.com")
+        payment_service._save_order_record(
+            order_id="order_test_reconcile_001",
+            user_id=int(user["user_id"]),
+            plan_type="month_1",
+            amount=29900,
+            currency="INR",
+            status="pending",
+            payment_url="/payment/order_test_reconcile_001",
+        )
+        payment_service._update_order_debug(
+            "order_test_reconcile_001",
+            payment_id="pay_test_reconcile_001",
+            webhook_verified=1,
+            webhook_status="verified",
+            webhook_event_type="payment.captured",
+            webhook_received_at="2026-01-01T00:00:00+00:00",
+            payment_status="pending",
+        )
+
+        reconciled_order = payment_service.get_order("order_test_reconcile_001")
+        self.assertEqual(reconciled_order["status"], "paid")
+        self.assertEqual(reconciled_order["payment_status"], "captured")
+        self.assertTrue(reconciled_order["premium_activated_at"])
+        self.assertEqual(payment_service.current_step(reconciled_order), "premium_activated")
 
     def test_posting_plan_redirects_to_manual_payment_page(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-open-checkout@example.com")
@@ -570,6 +718,8 @@ class PaymentEnvironmentTests(unittest.TestCase):
         self.assertIn("pay_test_admin_001", payment_ids)
         self.assertIn(created_order["order_id"], order_ids)
         self.assertEqual(matching_order["payment_id"], "pay_test_admin_001")
+        self.assertEqual(matching_order["status"], "paid")
+        self.assertEqual(matching_order["payment_status"], "captured")
         self.assertEqual(int(matching_order["callback_verified"] or 0), 0)
         self.assertEqual(int(matching_order["webhook_verified"] or 0), 1)
         self.assertEqual(matching_order["current_step"], "premium_activated")
