@@ -47,6 +47,7 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     user = user_service.ensure_user(update.effective_user)
+    raw_telegram_user_id = update.effective_user.id
     message = update.effective_message
     text = (message.text or "").strip()
     if not text:
@@ -61,7 +62,7 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         text,
     )
 
-    if user_service.is_admin(user["user_id"]):
+    if user_service.is_admin(raw_telegram_user_id):
         if user["user_id"] not in support_service.get_support_admin_ids():
             return
         if context.user_data.get("admin_mode") or context.user_data.get("question_wizard"):

@@ -1,15 +1,22 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 
 TEST_EMAIL_PREFIX = "codex-telegram-link-test-"
 TEST_TELEGRAM_IDS = (990000001, 990000002, 990000003)
+TEST_DB_DIR = Path(tempfile.gettempdir()) / "quizpathshala_link_tests"
+TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
+TEST_DB_PATH = TEST_DB_DIR / "quizpathshala_link_test.db"
 
 os.environ["APP_ENV"] = "test"
 os.environ["BOT_USERNAME"] = "QuizPathshala_bot"
+os.environ["DB_PATH"] = str(TEST_DB_PATH)
 
+from config import SUPREME_ADMIN_ID
 from db.database import database
 from services.telegram_link_service import telegram_link_service
 from services.user_service_db import user_service
@@ -41,13 +48,14 @@ class TelegramLinkingTests(unittest.TestCase):
             conn.execute(f"DELETE FROM users WHERE user_id IN ({placeholders})", TEST_TELEGRAM_IDS)
             conn.execute("DELETE FROM users WHERE login_identifier LIKE ?", (f"{TEST_EMAIL_PREFIX}%",))
 
-    def _create_user(self, suffix: str) -> dict:
+    def _create_user(self, suffix: str, *, role: str = "user", user_id: int | None = None) -> dict:
         email = f"{TEST_EMAIL_PREFIX}{suffix}@example.com"
         return user_service.upsert_login_account(
             login_identifier=email,
             password="password123",
             full_name=suffix.replace("-", " ").title(),
-            role="user",
+            role=role,
+            user_id=user_id,
         )
 
     def _login(self, client, user: dict):
@@ -57,6 +65,8 @@ class TelegramLinkingTests(unittest.TestCase):
             session[web_identity_service.ROLE_KEY] = str(user.get("user_role") or "user")
             session[web_identity_service.SESSION_KEY] = int(user["user_id"])
             session[web_identity_service.SNAPSHOT_KEY] = snapshot
+            if user.get("is_admin") or str(user.get("user_role") or "") in {"admin", "super_admin"}:
+                session[web_identity_service.ADMIN_KEY] = True
 
     def _tg_user(self, user_id: int, *, username: str = "telegramstudent", full_name: str = "Telegram Student"):
         return SimpleNamespace(id=user_id, username=username, full_name=full_name, first_name=full_name.split(" ", 1)[0])
@@ -79,6 +89,23 @@ class TelegramLinkingTests(unittest.TestCase):
         self.assertIsNotNone(token_row)
         self.assertEqual(int(token_row["website_user_id"]), int(user["user_id"]))
         self.assertFalse(token_row["used_at"])
+
+    def test_admin_dashboard_link_route_redirects_to_bot_start_url(self):
+        admin_user = self._create_user("admin-dashboard-route", role="admin")
+
+        with app.test_client() as client:
+            self._login(client, admin_user)
+            response = client.post("/admin/telegram-link")
+
+        self.assertEqual(response.status_code, 302)
+        location = response.headers["Location"]
+        self.assertIn("https://t.me/QuizPathshala_bot?start=", location)
+        with database.connection() as conn:
+            token_row = conn.execute(
+                "SELECT * FROM telegram_link_tokens WHERE website_user_id = ?",
+                (int(admin_user["user_id"]),),
+            ).fetchone()
+        self.assertIsNotNone(token_row)
 
     def test_linking_keeps_website_name_and_merges_account_stats(self):
         website_user = self._create_user("merge-account")
@@ -172,6 +199,47 @@ class TelegramLinkingTests(unittest.TestCase):
             int(telegram_link_service.get_telegram_link(TEST_TELEGRAM_IDS[0])["website_user_id"]),
             int(second_website_user["user_id"]),
         )
+
+    def test_linked_website_super_admin_gets_telegram_super_admin_access(self):
+        website_super_admin = self._create_user(
+            "website-super-admin",
+            role="super_admin",
+            user_id=7800000001,
+        )
+        telegram_user = self._tg_user(TEST_TELEGRAM_IDS[1], username="linked_super_admin", full_name="Linked Super Admin")
+
+        token = telegram_link_service.create_link_request(int(website_super_admin["user_id"]))
+        result = telegram_link_service.consume_start_token(token["token"], telegram_user)
+
+        self.assertTrue(result["ok"])
+        refreshed_user = user_service.get_user(int(website_super_admin["user_id"]))
+        self.assertEqual(refreshed_user["user_role"], "super_admin")
+        self.assertTrue(user_service.is_supreme_admin(telegram_user.id))
+        self.assertTrue(user_service.is_admin(telegram_user.id))
+        self.assertEqual(
+            int(telegram_link_service.get_telegram_link(telegram_user.id)["website_user_id"]),
+            int(website_super_admin["user_id"]),
+        )
+
+    def test_linked_telegram_super_admin_does_not_overwrite_website_role(self):
+        website_user = self._create_user("linked-telegram-super-admin", role="user")
+        telegram_super_admin = self._tg_user(
+            SUPREME_ADMIN_ID,
+            username="supreme_link",
+            full_name="Supreme Link",
+        )
+
+        token = telegram_link_service.create_link_request(int(website_user["user_id"]))
+        result = telegram_link_service.consume_start_token(token["token"], telegram_super_admin)
+
+        self.assertTrue(result["ok"])
+        refreshed_user = user_service.get_user(int(website_user["user_id"]))
+        self.assertEqual(refreshed_user["user_role"], "user")
+        self.assertFalse(bool(refreshed_user["is_admin"]))
+        self.assertEqual(refreshed_user["website_name"], "Linked Telegram Super Admin")
+        self.assertEqual(refreshed_user["telegram_full_name"], "Supreme Link")
+        self.assertTrue(user_service.is_supreme_admin(SUPREME_ADMIN_ID))
+        self.assertTrue(user_service.is_admin(SUPREME_ADMIN_ID))
 
 
 if __name__ == "__main__":

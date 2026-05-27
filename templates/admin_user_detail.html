@@ -14,7 +14,7 @@
 
 <section class="section">
     <div class="container card-grid score-grid">
-        <article class="info-card"><h3>Name</h3><p>{{ user_detail.full_name }}</p></article>
+        <article class="info-card"><h3>Name</h3><p>{{ user_detail.website_name or user_detail.full_name }}</p></article>
         <article class="info-card"><h3>Email</h3><p>{{ user_detail.email or '-' }}</p></article>
         <article class="info-card"><h3>Joined</h3><p>{{ user_detail.created_at|format_user_datetime(current_user) }}</p></article>
         <article class="info-card"><h3>Role</h3><p>{{ user_detail.user_role }}</p></article>
@@ -36,6 +36,10 @@
             <h2>Activity summary</h2>
             <table>
                 <tbody>
+                    <tr><th>Website name</th><td>{{ user_detail.website_name or user_detail.full_name }}</td></tr>
+                    <tr><th>Telegram name</th><td>{{ user_detail.telegram_full_name or '-' }}</td></tr>
+                    <tr><th>Telegram handle</th><td>{% if user_telegram_link.telegram_username %}@{{ user_telegram_link.telegram_username }}{% elif user_detail.telegram_username %}@{{ user_detail.telegram_username }}{% else %}-{% endif %}</td></tr>
+                    <tr><th>Telegram link</th><td>{% if user_telegram_link %}Linked{% else %}Not linked{% endif %}</td></tr>
                     <tr><th>Premium</th><td>{{ 'Yes' if user_detail.is_premium else 'No' }}</td></tr>
                     <tr><th>Premium expires</th><td>{% if user_detail.premium_expires_at %}{{ user_detail.premium_expires_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
                     <tr><th>Total paid</th><td>INR {{ '%.2f'|format(activity_summary.total_paid_paise / 100) }}</td></tr>
@@ -45,6 +49,18 @@
                     <tr><th>Last support ticket</th><td>{% if activity_summary.last_ticket_at %}{{ activity_summary.last_ticket_at|format_user_datetime(current_user) }}{% else %}-{% endif %}</td></tr>
                 </tbody>
             </table>
+            {% if current_user.user_id == user_detail.user_id %}
+            <div class="hero-actions">
+                <form method="post" accept-charset="UTF-8" action="{{ url_for('admin.admin_telegram_link') }}" data-disable-on-submit="true">
+                    <button class="button button-primary" type="submit">Link Telegram Account</button>
+                </form>
+                <form method="post" accept-charset="UTF-8" action="{{ url_for('admin.admin_telegram_link') }}" data-disable-on-submit="true">
+                    <input type="hidden" name="allow_relink" value="1">
+                    <button class="button button-secondary" type="submit">Confirm Relink</button>
+                </form>
+            </div>
+            <p>{% if telegram_bot_username %}This opens <strong>@{{ telegram_bot_username }}</strong> with a one-time token that expires in 10 minutes.{% endif %}</p>
+            {% endif %}
         </div>
 
         <div class="data-card">

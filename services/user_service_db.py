@@ -382,10 +382,39 @@ class UserService:
         )
 
     def is_supreme_admin(self, user_id: int) -> bool:
-        return int(user_id) == int(SUPREME_ADMIN_ID)
+        resolved_user_id = self._coerce_user_id(user_id)
+        if resolved_user_id is None:
+            return False
+
+        if resolved_user_id == int(SUPREME_ADMIN_ID):
+            return True
+
+        internal_user_id = self._resolve_linked_website_user_id(resolved_user_id)
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT user_role FROM users WHERE user_id = ?",
+                (internal_user_id,),
+            ).fetchone()
+        return bool(row and str(row["user_role"] or "") == "super_admin")
 
     def is_admin(self, user_id: int) -> bool:
-        return self.is_supreme_admin(user_id) or int(user_id) in ADMINS
+        resolved_user_id = self._coerce_user_id(user_id)
+        if resolved_user_id is None:
+            return False
+
+        if resolved_user_id == int(SUPREME_ADMIN_ID) or resolved_user_id in ADMINS:
+            return True
+
+        internal_user_id = self._resolve_linked_website_user_id(resolved_user_id)
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT is_admin, user_role FROM users WHERE user_id = ?",
+                (internal_user_id,),
+            ).fetchone()
+        if not row:
+            return False
+
+        return bool(int(row["is_admin"] or 0)) or str(row["user_role"] or "") in {"admin", "super_admin"}
 
     def ensure_user(self, tg_user) -> dict:
         from services.telegram_link_service import telegram_link_service
@@ -408,7 +437,7 @@ class UserService:
 
         if row:
             user = self._normalize_user_dict(dict(row))
-        elif self.is_supreme_admin(user_id):
+        elif int(user_id) == int(SUPREME_ADMIN_ID):
             user = {
                 "user_id": user_id,
                 "username": None,
@@ -749,6 +778,20 @@ class UserService:
         if "@" in raw:
             return self._normalize_email(raw)
         return self._normalize_phone(raw) or raw.lower()
+
+    def _coerce_user_id(self, value) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_linked_website_user_id(self, user_id: int) -> int:
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT website_user_id FROM telegram_account_links WHERE telegram_user_id = ?",
+                (int(user_id),),
+            ).fetchone()
+        return int(row["website_user_id"]) if row and row["website_user_id"] is not None else int(user_id)
 
     def _normalize_email(self, value: str | None) -> str:
         normalized = (value or "").strip().lower()

@@ -6,11 +6,12 @@ import uuid
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
-from config import ADMIN_PASSWORD, SECRET_KEY, SUPPORT_TELEGRAM
+from config import ADMIN_PASSWORD, BOT_USERNAME, SECRET_KEY, SUPPORT_TELEGRAM
 from db.database import database
 from services.exam_service_db import exam_service
 from services.payment_service_db import payment_service
 from services.quiz_settings_service import quiz_settings_service
+from services.telegram_link_service import telegram_link_service
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
 from utils.logging_utils import get_logger
@@ -791,6 +792,8 @@ def admin_dashboard():
         logs_from=request.args.get("logs_from"),
         logs_to=request.args.get("logs_to"),
     )
+    current_admin_account = web_admin_service.get_dashboard_user(int(current_user["user_id"]))
+    current_admin_telegram_link = telegram_link_service.get_website_link(int(current_user["user_id"]))
 
     return render_template(
         "admin_dashboard.html",
@@ -798,6 +801,9 @@ def admin_dashboard():
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=True,
         current_user=current_user,
+        current_admin_account=current_admin_account,
+        current_admin_telegram_link=current_admin_telegram_link,
+        telegram_bot_username=(BOT_USERNAME or "").lstrip("@"),
         search_query=search_query,
         admin_return_anchor=_sanitize_admin_anchor(request.args.get("return_anchor")),
         **dashboard,
@@ -819,10 +825,30 @@ def admin_user_detail(user_id: int):
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=True,
         current_user=current_user,
+        current_admin_telegram_link=telegram_link_service.get_website_link(int(current_user["user_id"])),
+        telegram_bot_username=(BOT_USERNAME or "").lstrip("@"),
         user_detail=detail["user"],
+        user_telegram_link=detail.get("telegram_link") or {},
         activity_summary=detail["activity_summary"],
         recent_attempts=detail["recent_attempts"],
     )
+
+
+@admin_blueprint.route("/admin/telegram-link", methods=["POST"])
+@admin_required
+def admin_telegram_link():
+    current_user = web_identity_service.get_authenticated_user_snapshot()
+    allow_relink = request.form.get("allow_relink", "").strip() == "1"
+    result = telegram_link_service.create_link_request(int(current_user["user_id"]), allow_relink=allow_relink)
+    if not result.get("ok"):
+        flash(result.get("error") or "Could not start Telegram linking right now.", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    if allow_relink:
+        flash("Confirmation accepted. Finish linking from Telegram within 10 minutes.", "success")
+    else:
+        flash("Open Telegram and finish linking within 10 minutes.", "success")
+    return redirect(result["bot_start_url"])
 
 
 @admin_blueprint.route("/admin/exams", methods=["GET", "POST"])

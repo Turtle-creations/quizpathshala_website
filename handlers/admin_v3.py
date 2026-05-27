@@ -563,7 +563,7 @@ def _build_premium_prices_text() -> str:
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = user_service.ensure_user(update.effective_user)
-    if not user_service.is_admin(user["user_id"]):
+    if not user_service.is_admin(update.effective_user.id):
         await update.effective_message.reply_text("❌ You are not allowed to open the admin panel.")
         return
 
@@ -586,7 +586,7 @@ async def check_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     requester = user_service.ensure_user(update.effective_user)
-    if not user_service.is_admin(requester["user_id"]):
+    if not user_service.is_admin(update.effective_user.id):
         await update.effective_message.reply_text("❌ You are not allowed to use this command.")
         return
 

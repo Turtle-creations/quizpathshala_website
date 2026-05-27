@@ -15,11 +15,13 @@ logger = get_logger(__name__)
 
 def _load_premium_user(tg_user) -> dict:
     user = user_service.get_user(tg_user.id)
-    return user if user else user_service.ensure_user(tg_user)
+    loaded_user = user if user else user_service.ensure_user(tg_user)
+    loaded_user["telegram_source_user_id"] = tg_user.id
+    return loaded_user
 
 
 def _payment_unavailable_text(user: dict, missing_vars: list[str]) -> str:
-    if user_service.is_admin(user["user_id"]):
+    if user_service.is_admin(user.get("telegram_source_user_id") or user["user_id"]):
         missing_text = ", ".join(missing_vars)
         return (
             "<b>Payment configuration error</b>\n\n"

@@ -10,6 +10,7 @@ from services.exam_service_db import exam_service
 from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
 from services.quiz_settings_service import quiz_settings_service
 from services.support_service_db import support_service
+from services.telegram_link_service import telegram_link_service
 from services.user_service_db import now_iso, user_service
 
 
@@ -392,6 +393,10 @@ class WebAdminService:
     def get_question(self, question_id: int) -> dict | None:
         return exam_service.get_question(question_id)
 
+    def get_dashboard_user(self, user_id: int) -> dict | None:
+        user = user_service.get_user(user_id)
+        return user or None
+
     def get_user_detail(self, user_id: int) -> dict | None:
         user = user_service.get_user(user_id)
         if not user:
@@ -476,6 +481,7 @@ class WebAdminService:
 
         return {
             "user": user,
+            "telegram_link": telegram_link_service.get_website_link(user_id),
             "activity_summary": {
                 "total_attempts": int(attempts_summary["total_attempts"] or 0),
                 "total_correct": int(attempts_summary["total_correct"] or 0),

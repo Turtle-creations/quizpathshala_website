@@ -16,7 +16,7 @@ from utils.formatters import (
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = user_service.ensure_user(update.effective_user)
-    has_admin_access = user_service.is_admin(user["user_id"])
+    has_admin_access = user_service.is_admin(update.effective_user.id)
 
     await update.effective_message.reply_text(
         (
@@ -33,7 +33,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     user = user_service.ensure_user(query.from_user)
-    has_admin_access = user_service.is_admin(user["user_id"])
+    has_admin_access = user_service.is_admin(query.from_user.id)
     data = query.data
 
     if data == "menu:main":

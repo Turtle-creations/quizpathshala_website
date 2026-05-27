@@ -18,7 +18,7 @@ def _is_admin(user_id: int) -> bool:
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = user_service.ensure_user(update.effective_user)
-    if not user_service.is_admin(user["user_id"]):
+    if not user_service.is_admin(update.effective_user.id):
         await update.effective_message.reply_text("You are not allowed to open the admin panel.")
         return
 

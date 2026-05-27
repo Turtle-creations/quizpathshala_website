@@ -30,6 +30,7 @@ async def quiz_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     user = user_service.ensure_user(query.from_user)
+    raw_telegram_user_id = query.from_user.id
 
     parts = query.data.split(":")
     action = parts[1]
@@ -48,7 +49,7 @@ async def quiz_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 exam_id,
                 sets_,
                 show_lock_icons=not (
-                    premium_service.is_premium(user["user_id"]) or user_service.is_admin(user["user_id"])
+                    premium_service.is_premium(user["user_id"]) or user_service.is_admin(raw_telegram_user_id)
                 ),
             ),
         )

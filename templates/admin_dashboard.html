@@ -27,6 +27,43 @@
 
 <section class="section">
     <div class="container admin-grid">
+        <article class="info-card">
+            <h2>Admin Profile</h2>
+            <p><strong>Website name:</strong> {{ current_admin_account.website_name if current_admin_account else current_user.full_name }}</p>
+            <p><strong>Role:</strong> {{ current_admin_account.user_role if current_admin_account else current_user.user_role }}</p>
+            <p>
+                <strong>Telegram link:</strong>
+                {% if current_admin_telegram_link %}
+                    {% if current_admin_telegram_link.telegram_username %}
+                        @{{ current_admin_telegram_link.telegram_username }}
+                    {% else %}
+                        Telegram user ID {{ current_admin_telegram_link.telegram_user_id }}
+                    {% endif %}
+                {% else %}
+                    Not linked
+                {% endif %}
+            </p>
+            <div class="hero-actions">
+                <form method="post" accept-charset="UTF-8" action="{{ url_for('admin.admin_telegram_link') }}" data-disable-on-submit="true">
+                    <button class="button button-primary" type="submit">
+                        {% if current_admin_telegram_link %}Link Telegram Account{% else %}Link Telegram Account{% endif %}
+                    </button>
+                </form>
+                <form method="post" accept-charset="UTF-8" action="{{ url_for('admin.admin_telegram_link') }}" data-disable-on-submit="true">
+                    <input type="hidden" name="allow_relink" value="1">
+                    <button class="button button-secondary" type="submit">Confirm Relink</button>
+                </form>
+            </div>
+            <p>
+                Your website role stays unchanged. Telegram admin access is resolved through the linked identity mapping.
+                {% if telegram_bot_username %}The link opens <strong>@{{ telegram_bot_username }}</strong>.{% endif %}
+            </p>
+        </article>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
         <div class="form-card" id="plans-manager" data-admin-panel tabindex="-1">
             <h2>{{ 'Edit premium plan' if editing_plan else 'Add premium plan' }}</h2>
             <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
