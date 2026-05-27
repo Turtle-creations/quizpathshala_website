@@ -154,7 +154,6 @@ document.addEventListener("DOMContentLoaded", function () {
         optionButtons.forEach(function (button) {
             button.addEventListener("click", function () {
                 var optionIndex = Number(button.getAttribute("data-option-index"));
-                button.classList.add("option-button-pending");
                 submitQuiz("answer", optionIndex);
             });
         });
