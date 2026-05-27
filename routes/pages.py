@@ -1,4 +1,4 @@
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
 from config import BOT_URL, CANONICAL_URL, SITE_NAME, SITE_TAGLINE, SUPPORT_HOURS, SUPPORT_TELEGRAM
 from services.site_content import ABOUT_PAGE, FEATURE_ITEMS, LEGAL_PAGES, PLATFORM_PILLARS
@@ -27,8 +27,11 @@ def _shared_context() -> dict:
     }
 
 
-@pages_blueprint.route("/", methods=["GET", "POST"])
+@pages_blueprint.route("/", methods=["GET", "POST", "HEAD"])
 def home():
+    if request.method == "HEAD":
+        return Response(status=200, mimetype="text/plain")
+
     if request.method == "POST":
         full_name = request.form.get("full_name", "")
         web_identity_service.update_name(full_name)
@@ -89,4 +92,4 @@ def refund_policy():
 
 @pages_blueprint.route("/health")
 def health():
-    return {"status": "ok", "service": "quizpathshala-web"}
+    return Response("OK", status=200, mimetype="text/plain")
