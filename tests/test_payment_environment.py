@@ -195,9 +195,51 @@ class PaymentEnvironmentTests(unittest.TestCase):
 
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Test checkout disabled", body)
+        self.assertIn("Checkout unavailable", body)
         self.assertIn("PAYMENT_MODE must be set to test", body)
         self.assertIn("RAZORPAY_KEY_SECRET is missing", body)
+
+    def test_premium_page_enables_checkout_in_live_mode_when_live_is_explicitly_enabled(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-live-page@example.com")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"), mock.patch(
+                "services.payment_service_db.PAYMENT_LIVE_ENABLED", True
+            ), mock.patch("services.payment_service_db.RAZORPAY_KEY_ID", "rzp_live_key"), mock.patch(
+                "services.payment_service_db.RAZORPAY_KEY_SECRET", "rzp_live_secret"
+            ), mock.patch(
+                "services.payment_service_db.RAZORPAY_WEBHOOK_SECRET", "whsec_live"
+            ):
+                response = client.get("/premium")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Continue to Payment", body)
+        self.assertIn("Live mode is active.", body)
+        self.assertNotIn("Test checkout disabled", body)
+        self.assertNotIn("PAYMENT_MODE must be set to test", body)
+
+    def test_premium_page_shows_live_missing_secret_reason(self):
+        user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-live-missing-secret@example.com")
+
+        with app.test_client() as client:
+            self._login(client, user)
+            with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"), mock.patch(
+                "services.payment_service_db.PAYMENT_LIVE_ENABLED", True
+            ), mock.patch("services.payment_service_db.RAZORPAY_KEY_ID", "rzp_live_key"), mock.patch(
+                "services.payment_service_db.RAZORPAY_KEY_SECRET", "rzp_live_secret"
+            ), mock.patch(
+                "services.payment_service_db.RAZORPAY_WEBHOOK_SECRET", ""
+            ):
+                response = client.get("/premium")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Checkout unavailable", body)
+        self.assertIn("Razorpay live checkout is unavailable", body)
+        self.assertIn("RAZORPAY_WEBHOOK_SECRET is missing", body)
+        self.assertNotIn("PAYMENT_MODE must be set to test", body)
 
     def test_payment_page_does_not_auto_open_checkout(self):
         user = self._create_user(email=f"{TEST_EMAIL_PREFIX}student-no-auto-open@example.com")
@@ -731,8 +773,8 @@ class PaymentEnvironmentTests(unittest.TestCase):
         with mock.patch("services.payment_service_db.PAYMENT_MODE", "live"), mock.patch(
             "services.payment_service_db.PAYMENT_LIVE_ENABLED", False
         ):
-            self.assertIn("PAYMENT_MODE must be set to test", payment_service.get_missing_configuration())
-            with self.assertRaisesRegex(ValueError, "Live payment is disabled for this build"):
+            self.assertIn("PAYMENT_LIVE_ENABLED must be true when PAYMENT_MODE=live", payment_service.get_missing_configuration())
+            with self.assertRaisesRegex(ValueError, "PAYMENT_LIVE_ENABLED=true"):
                 payment_service.validate_test_mode()
 
 

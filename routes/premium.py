@@ -78,6 +78,8 @@ def premium_page():
         user=user,
         premium_prices=payment_service.list_premium_prices(),
         payment_ready=payment_service.checkout_ready(),
+        payment_mode_name=payment_service.checkout_mode_name(),
+        payment_is_test_mode=payment_service.is_test_mode(),
         checkout_blockers=checkout_blockers,
         payment_config_issues=payment_service.get_missing_configuration(),
         payment_mode_note=payment_service.payment_mode_note(),
@@ -123,6 +125,8 @@ def payment_page(order_id: str):
         plan=plan,
         checkout_options=json.dumps(checkout_options),
         public_base_url=PUBLIC_BASE_URL.rstrip("/") or request.url_root.rstrip("/"),
+        payment_mode_name=payment_service.checkout_mode_name(),
+        payment_is_test_mode=payment_service.is_test_mode(),
         payment_mode_note=payment_service.payment_mode_note(),
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )

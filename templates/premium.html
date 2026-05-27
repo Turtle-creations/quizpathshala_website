@@ -20,7 +20,9 @@
             </ul>
             <p>Payments are processed securely through Razorpay from the website. Premium is never activated from the browser alone and becomes active only after server-side webhook verification.</p>
             <p>{{ payment_mode_note }}</p>
+            {% if payment_is_test_mode %}
             <p>For test verification, prefer Razorpay test cards and supported test methods instead of real UPI apps.</p>
+            {% endif %}
             <p>Telegram remains available as a companion channel for support and continuity at <a href="{{ bot_url }}" target="_blank" rel="noopener">@QuizPathshala_bot</a>.</p>
         </div>
 
@@ -47,8 +49,16 @@
             </div>
             {% if not payment_ready %}
             <div class="text-page trust-note">
-                <h3>Test checkout disabled</h3>
-                <p>Razorpay test checkout is unavailable until the required test-mode settings are present.</p>
+                <h3>Checkout unavailable</h3>
+                <p>
+                    {% if payment_mode_name == "live" %}
+                    Razorpay live checkout is unavailable until the required live-mode settings are present.
+                    {% elif payment_mode_name == "test" %}
+                    Razorpay test checkout is unavailable until the required test-mode settings are present.
+                    {% else %}
+                    Razorpay checkout is unavailable until a valid payment mode is configured.
+                    {% endif %}
+                </p>
                 <p>{{ checkout_blockers|join("; ") }}</p>
                 {% if payment_config_issues %}
                 <p>Other payment environment issues: {{ payment_config_issues|join("; ") }}</p>

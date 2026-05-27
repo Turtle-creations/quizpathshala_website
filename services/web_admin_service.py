@@ -706,6 +706,8 @@ class WebAdminService:
             page=page,
         )
         for row in rows:
+            normalized_row = payment_service.normalize_order_state(row) or row
+            row.update(normalized_row)
             row["current_step"] = payment_service.current_step(row)
         return rows, pagination
 

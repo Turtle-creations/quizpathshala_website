@@ -50,23 +50,55 @@ class PaymentService:
     def is_live_mode(self) -> bool:
         return PAYMENT_MODE == "live"
 
-    def validate_test_mode(self) -> None:
-        if not self.is_test_mode():
-            if self.is_live_mode():
-                raise ValueError(
-                    "Live payment is disabled for this build. "
-                    "Set PAYMENT_MODE=test for Razorpay test checkout. "
-                    "Only enable live later with PAYMENT_MODE=live and PAYMENT_LIVE_ENABLED=true."
-                )
+    def live_checkout_enabled(self) -> bool:
+        return self.is_live_mode() and PAYMENT_LIVE_ENABLED
+
+    def checkout_mode_name(self) -> str:
+        if self.is_test_mode():
+            return "test"
+        if self.live_checkout_enabled():
+            return "live"
+        if self.is_live_mode():
+            return "live"
+        return "disabled"
+
+    def validate_payment_mode(self) -> None:
+        if self.is_test_mode() or self.live_checkout_enabled():
+            return
+        if self.is_live_mode():
             raise ValueError(
-                f"Payment mode '{PAYMENT_MODE or 'disabled'}' is not allowed. "
-                "Set PAYMENT_MODE=test to use the test payment environment."
+                "Live payment is blocked until PAYMENT_LIVE_ENABLED=true is set together with PAYMENT_MODE=live."
             )
+        raise ValueError(
+            f"Payment mode '{PAYMENT_MODE or 'disabled'}' is not allowed. "
+            "Set PAYMENT_MODE=test for test checkout or PAYMENT_MODE=live with PAYMENT_LIVE_ENABLED=true for live checkout."
+        )
+
+    def validate_test_mode(self) -> None:
+        self.validate_payment_mode()
 
     def get_checkout_blockers(self) -> list[str]:
         blockers = []
-        if not self.is_test_mode():
-            blockers.append("PAYMENT_MODE must be set to test")
+        if self.is_test_mode():
+            if not (RAZORPAY_KEY_ID or "").strip():
+                blockers.append("RAZORPAY_KEY_ID is missing")
+            if not (RAZORPAY_KEY_SECRET or "").strip():
+                blockers.append("RAZORPAY_KEY_SECRET is missing")
+            return blockers
+
+        if self.live_checkout_enabled():
+            if not (RAZORPAY_KEY_ID or "").strip():
+                blockers.append("RAZORPAY_KEY_ID is missing")
+            if not (RAZORPAY_KEY_SECRET or "").strip():
+                blockers.append("RAZORPAY_KEY_SECRET is missing")
+            if not (RAZORPAY_WEBHOOK_SECRET or "").strip():
+                blockers.append("RAZORPAY_WEBHOOK_SECRET is missing")
+            return blockers
+
+        if self.is_live_mode():
+            blockers.append("PAYMENT_LIVE_ENABLED must be true when PAYMENT_MODE=live")
+        else:
+            blockers.append("PAYMENT_MODE must be set to test or live")
         if not (RAZORPAY_KEY_ID or "").strip():
             blockers.append("RAZORPAY_KEY_ID is missing")
         if not (RAZORPAY_KEY_SECRET or "").strip():
@@ -79,17 +111,15 @@ class PaymentService:
                 "Test mode is active. Real UPI apps can fail in Razorpay test mode, "
                 "so use Razorpay test cards or supported test methods while verifying the flow."
             )
+        if self.live_checkout_enabled():
+            return (
+                "Live mode is active. Premium will activate only after a valid captured-payment webhook is verified on the server."
+            )
         if self.is_live_mode() and not PAYMENT_LIVE_ENABLED:
             return (
-                "Live mode was requested but is still blocked. "
-                "This build keeps checkout in test mode unless PAYMENT_LIVE_ENABLED=true is set explicitly."
+                "Live mode was requested, but checkout is still blocked until PAYMENT_LIVE_ENABLED=true is set."
             )
-        if self.is_live_mode():
-            return (
-                "Live mode has been explicitly enabled through environment settings. "
-                "Keep it disabled until production rollout is approved."
-            )
-        return "Payments are disabled until PAYMENT_MODE=test is configured."
+        return "Payments are disabled until a valid payment mode is configured."
 
     def checkout_ready(self) -> bool:
         return not self.get_checkout_blockers()
@@ -732,9 +762,7 @@ class PaymentService:
             ).fetchone()
         if not row:
             return None
-        order = dict(row)
-        reconciled = self._reconcile_verified_captured_order(order)
-        return reconciled or order
+        return self.normalize_order_state(dict(row))
 
     def _reconcile_verified_captured_order(self, order: dict) -> dict | None:
         if not self._is_payment_complete(order):
@@ -754,6 +782,12 @@ class PaymentService:
         if not updates:
             return None
         return self._update_order_debug(order["order_id"], **updates)
+
+    def normalize_order_state(self, order: dict | None) -> dict | None:
+        if not order:
+            return None
+        reconciled = self._reconcile_verified_captured_order(dict(order))
+        return reconciled or dict(order)
 
     async def get_order_with_fallback(self, order_id: str) -> tuple[dict | None, str]:
         order = self.get_order(order_id)

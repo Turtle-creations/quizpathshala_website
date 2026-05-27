@@ -14,8 +14,12 @@
         <div class="text-page">
             <p>Secure payment is handled by Razorpay. Premium is activated only after a valid captured-payment webhook reaches the server.</p>
             <p>{{ payment_mode_note }}</p>
-            <p>Use the button below to open Razorpay checkout only when you are ready to test this order.</p>
+            <p>Use the button below to open Razorpay checkout only when you are ready to continue this order.</p>
+            {% if payment_is_test_mode %}
             <p>In test mode, real UPI apps may fail. Use Razorpay test cards or other supported Razorpay test methods.</p>
+            {% else %}
+            <p>Use the button below to open Razorpay checkout and complete the payment securely.</p>
+            {% endif %}
             <button class="button button-primary" id="pay-btn">Pay Now</button>
             <p id="payment-debug-message" class="helper-text" aria-live="polite"></p>
         </div>
