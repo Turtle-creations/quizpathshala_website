@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from flask import g, has_request_context
 
 from db.database import database
-from services.exam_service_db import exam_service
+from services.exam_service_db import SimilarQuestionError, exam_service
 from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
 from services.quiz_settings_service import quiz_settings_service
 from services.support_service_db import support_service
@@ -310,6 +310,7 @@ class WebAdminService:
         explanation: str | None = None,
         image_path: str | None = None,
         time_limit: int | None = None,
+        allow_similar_duplicate: bool = False,
     ) -> dict:
         return exam_service.save_question(
             set_id=set_id,
@@ -319,6 +320,7 @@ class WebAdminService:
             explanation=explanation,
             image_path=image_path,
             time_limit=time_limit,
+            allow_similar_duplicate=allow_similar_duplicate,
         )
 
     def update_question(
@@ -332,6 +334,7 @@ class WebAdminService:
         explanation: str | None = None,
         image_path: str | None = None,
         time_limit: int | None = None,
+        allow_similar_duplicate: bool = False,
     ) -> dict:
         return exam_service.update_question(
             question_id=question_id,
@@ -342,9 +345,10 @@ class WebAdminService:
             explanation=explanation,
             image_path=image_path,
             time_limit=time_limit,
+            allow_similar_duplicate=allow_similar_duplicate,
         )
 
-    def bulk_import_questions(self, *, set_id: int, raw_text: str) -> list[dict]:
+    def bulk_import_questions(self, *, set_id: int, raw_text: str, allow_similar_duplicate: bool = False) -> list[dict]:
         created = []
         for line_number, line in enumerate(raw_text.splitlines(), start=1):
             cleaned = line.strip()
@@ -360,17 +364,24 @@ class WebAdminService:
             explanation = rest[0] if len(rest) >= 1 and rest[0] else None
             time_limit = int(rest[1]) if len(rest) >= 2 and rest[1] else None
             image_path = rest[2] if len(rest) >= 3 and rest[2] else None
-            created.append(
-                self.add_question(
-                    set_id=set_id,
-                    question_text=question_text,
-                    options=[option_a, option_b, option_c, option_d],
-                    correct_option=correct_option,
-                    explanation=explanation,
-                    image_path=image_path,
-                    time_limit=time_limit,
+            try:
+                created.append(
+                    self.add_question(
+                        set_id=set_id,
+                        question_text=question_text,
+                        options=[option_a, option_b, option_c, option_d],
+                        correct_option=correct_option,
+                        explanation=explanation,
+                        image_path=image_path,
+                        time_limit=time_limit,
+                        allow_similar_duplicate=allow_similar_duplicate,
+                    )
                 )
-            )
+            except SimilarQuestionError as exc:
+                duplicate_details = dict(exc.duplicate_details)
+                duplicate_details["line_number"] = line_number
+                duplicate_details["line_text"] = cleaned
+                raise SimilarQuestionError(str(exc), duplicate_details=duplicate_details) from exc
         return created
 
     def delete_exam(self, exam_id: int) -> None:

@@ -4,11 +4,11 @@ import hmac
 import re
 import uuid
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 
 from config import ADMIN_PASSWORD, BOT_USERNAME, SECRET_KEY, SUPPORT_TELEGRAM
 from db.database import database
-from services.exam_service_db import exam_service
+from services.exam_service_db import SimilarQuestionError, exam_service
 from services.payment_service_db import payment_service
 from services.quiz_settings_service import quiz_settings_service
 from services.telegram_link_service import telegram_link_service
@@ -34,6 +34,7 @@ _MOJIBAKE_FIELDS = (
 )
 _BACKUP_TABLE = "mojibake_question_backups"
 _QUESTION_PURGE_BACKUP_TABLE = "question_cleanup_backups"
+_QUESTION_DUPLICATE_SESSION_KEY = "admin_pending_question_duplicate"
 
 
 def _sanitize_admin_anchor(value: str | None) -> str | None:
@@ -56,6 +57,16 @@ def _admin_redirect(endpoint: str, redirect_values: dict[str, str | int] | None 
 
 def _admin_dashboard_redirect(redirect_values: dict[str, str | int], *, anchor: str | None = None):
     return _admin_redirect("admin.admin_dashboard", redirect_values, anchor=anchor)
+
+
+def _clear_pending_question_duplicate() -> dict:
+    pending = dict(session.get(_QUESTION_DUPLICATE_SESSION_KEY) or {})
+    session.pop(_QUESTION_DUPLICATE_SESSION_KEY, None)
+    return pending
+
+
+def _set_pending_question_duplicate(payload: dict) -> None:
+    session[_QUESTION_DUPLICATE_SESSION_KEY] = dict(payload)
 
 
 def admin_required(view_func):
@@ -673,6 +684,7 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
                         explanation=request.form.get("explanation") or None,
                         image_path=resolved_image_path,
                         time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                        allow_similar_duplicate=request.form.get("allow_similar_duplicate", "").strip() == "1",
                     )
                     if question_id
                     else web_admin_service.add_question(
@@ -688,12 +700,45 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
                         explanation=request.form.get("explanation") or None,
                         image_path=resolved_image_path,
                         time_limit=int(request.form.get("time_limit", "0") or "0") or None,
+                        allow_similar_duplicate=request.form.get("allow_similar_duplicate", "").strip() == "1",
                     )
                 )
+            except SimilarQuestionError as exc:
+                if uploaded_image_path:
+                    resolved_image_path = uploaded_image_path
+                duplicate_details = dict(exc.duplicate_details)
+                _set_pending_question_duplicate(
+                    {
+                        "mode": "manual",
+                        "message": duplicate_details.get("message") or "Similar question already exists in this set",
+                        "matched_question": duplicate_details.get("matched_question") or {},
+                        "set_title": duplicate_details.get("set_title") or "",
+                        "form_data": {
+                            "question_id": question_id or "",
+                            "set_id": int(request.form.get("set_id", "0")),
+                            "question_text": request.form.get("question_text", ""),
+                            "option_a": request.form.get("option_a", ""),
+                            "option_b": request.form.get("option_b", ""),
+                            "option_c": request.form.get("option_c", ""),
+                            "option_d": request.form.get("option_d", ""),
+                            "correct_option": request.form.get("correct_option", ""),
+                            "explanation": request.form.get("explanation") or "",
+                            "image_path": resolved_image_path,
+                            "current_image_path": existing_image_path or "",
+                            "remove_image": "1" if remove_current_image else "",
+                            "time_limit": int(request.form.get("time_limit", "0") or "0") or "",
+                            "q": request.form.get("q", ""),
+                            "return_anchor": request.form.get("return_anchor", "question-editor") or "question-editor",
+                        },
+                    }
+                )
+                flash("Similar question already exists in this set.", "error")
+                return _admin_dashboard_redirect(redirect_values, anchor="question-editor")
             except Exception:
                 if uploaded_image_path:
                     delete_question_image(uploaded_image_path)
                 raise
+            _clear_pending_question_duplicate()
             if existing_image_path and existing_image_path != resolved_image_path:
                 delete_question_image(existing_image_path)
             operation = question_result.get("operation") or "saved"
@@ -701,19 +746,111 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
                 flash("Question saved successfully.", "success")
             elif operation == "updated":
                 flash("Question updated successfully.", "success")
-            else:
-                flash("Duplicate question in this set was replaced with the latest version.", "success")
         elif action == "bulk_import":
-            created = web_admin_service.bulk_import_questions(
-                set_id=int(request.form.get("set_id", "0")),
-                raw_text=request.form.get("bulk_payload", ""),
-            )
-            replaced_count = sum(1 for item in created if item.get("operation") == "replaced")
+            try:
+                created = web_admin_service.bulk_import_questions(
+                    set_id=int(request.form.get("set_id", "0")),
+                    raw_text=request.form.get("bulk_payload", ""),
+                    allow_similar_duplicate=request.form.get("allow_similar_duplicate", "").strip() == "1",
+                )
+            except SimilarQuestionError as exc:
+                duplicate_details = dict(exc.duplicate_details)
+                _set_pending_question_duplicate(
+                    {
+                        "mode": "bulk",
+                        "message": duplicate_details.get("message") or "Similar question already exists in this set",
+                        "matched_question": duplicate_details.get("matched_question") or {},
+                        "set_title": duplicate_details.get("set_title") or "",
+                        "line_number": duplicate_details.get("line_number"),
+                        "line_text": duplicate_details.get("line_text") or "",
+                        "form_data": {
+                            "set_id": int(request.form.get("set_id", "0")),
+                            "bulk_payload": request.form.get("bulk_payload", ""),
+                            "q": request.form.get("q", ""),
+                            "return_anchor": request.form.get("return_anchor", "bulk-question-upload") or "bulk-question-upload",
+                        },
+                    }
+                )
+                flash("Similar question already exists in this set.", "error")
+                return _admin_dashboard_redirect(redirect_values, anchor="bulk-question-upload")
+            _clear_pending_question_duplicate()
             created_count = sum(1 for item in created if item.get("operation") == "created")
             updated_count = sum(1 for item in created if item.get("operation") == "updated")
             flash(
-                f"Bulk import completed: {created_count} created, {replaced_count} replaced, {updated_count} updated.",
+                f"Bulk import completed: {created_count} created, {updated_count} updated.",
                 "success",
+            )
+        elif action == "confirm_similar_question":
+            pending = dict(session.get(_QUESTION_DUPLICATE_SESSION_KEY) or {})
+            if not pending:
+                flash("No pending similar-question action was found.", "error")
+                return _admin_dashboard_redirect(redirect_values, anchor="question-editor")
+            form_data = dict(pending.get("form_data") or {})
+            if pending.get("mode") == "manual":
+                question_id = int(form_data.get("question_id") or 0) or None
+                question_result = (
+                    web_admin_service.update_question(
+                        question_id=question_id,
+                        set_id=int(form_data.get("set_id") or 0),
+                        question_text=form_data.get("question_text", ""),
+                        options=[
+                            form_data.get("option_a", ""),
+                            form_data.get("option_b", ""),
+                            form_data.get("option_c", ""),
+                            form_data.get("option_d", ""),
+                        ],
+                        correct_option=form_data.get("correct_option", ""),
+                        explanation=form_data.get("explanation") or None,
+                        image_path=form_data.get("image_path") or None,
+                        time_limit=int(form_data.get("time_limit") or 0) or None,
+                        allow_similar_duplicate=True,
+                    )
+                    if question_id
+                    else web_admin_service.add_question(
+                        set_id=int(form_data.get("set_id") or 0),
+                        question_text=form_data.get("question_text", ""),
+                        options=[
+                            form_data.get("option_a", ""),
+                            form_data.get("option_b", ""),
+                            form_data.get("option_c", ""),
+                            form_data.get("option_d", ""),
+                        ],
+                        correct_option=form_data.get("correct_option", ""),
+                        explanation=form_data.get("explanation") or None,
+                        image_path=form_data.get("image_path") or None,
+                        time_limit=int(form_data.get("time_limit") or 0) or None,
+                        allow_similar_duplicate=True,
+                    )
+                )
+                _clear_pending_question_duplicate()
+                operation = question_result.get("operation") or "saved"
+                flash("Question saved successfully." if operation == "created" else "Question updated successfully.", "success")
+                return _admin_dashboard_redirect(redirect_values, anchor="question-editor")
+            if pending.get("mode") == "bulk":
+                created = web_admin_service.bulk_import_questions(
+                    set_id=int(form_data.get("set_id") or 0),
+                    raw_text=form_data.get("bulk_payload", ""),
+                    allow_similar_duplicate=True,
+                )
+                _clear_pending_question_duplicate()
+                created_count = sum(1 for item in created if item.get("operation") == "created")
+                updated_count = sum(1 for item in created if item.get("operation") == "updated")
+                flash(
+                    f"Bulk import completed: {created_count} created, {updated_count} updated.",
+                    "success",
+                )
+                return _admin_dashboard_redirect(redirect_values, anchor="bulk-question-upload")
+        elif action == "cancel_similar_question":
+            pending = _clear_pending_question_duplicate()
+            form_data = dict(pending.get("form_data") or {})
+            image_path = form_data.get("image_path") or ""
+            current_image_path = form_data.get("current_image_path") or ""
+            if image_path and image_path != current_image_path:
+                delete_question_image(image_path)
+            flash("Similar question save was cancelled.", "success")
+            return _admin_dashboard_redirect(
+                redirect_values,
+                anchor="bulk-question-upload" if pending.get("mode") == "bulk" else "question-editor",
             )
         elif action == "toggle_set_lock":
             web_admin_service.set_set_lock(
@@ -794,6 +931,8 @@ def admin_dashboard():
     )
     current_admin_account = web_admin_service.get_dashboard_user(int(current_user["user_id"]))
     current_admin_telegram_link = telegram_link_service.get_website_link(int(current_user["user_id"]))
+    pending_question_duplicate = dict(session.get(_QUESTION_DUPLICATE_SESSION_KEY) or {})
+    pending_question_form_data = dict(pending_question_duplicate.get("form_data") or {})
 
     return render_template(
         "admin_dashboard.html",
@@ -803,6 +942,8 @@ def admin_dashboard():
         current_user=current_user,
         current_admin_account=current_admin_account,
         current_admin_telegram_link=current_admin_telegram_link,
+        pending_question_duplicate=pending_question_duplicate,
+        pending_question_form_data=pending_question_form_data,
         telegram_bot_username=(BOT_USERNAME or "").lstrip("@"),
         search_query=search_query,
         admin_return_anchor=_sanitize_admin_anchor(request.args.get("return_anchor")),

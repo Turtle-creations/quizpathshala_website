@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from difflib import SequenceMatcher
 from functools import lru_cache
 
 from config import DATA_DIR, DEFAULT_QUESTION_TIME
@@ -12,6 +13,12 @@ def timestamp() -> str:
 
 
 logger = get_logger(__name__)
+
+
+class SimilarQuestionError(ValueError):
+    def __init__(self, message: str, *, duplicate_details: dict):
+        super().__init__(message)
+        self.duplicate_details = duplicate_details
 
 
 def normalize_unicode_text(value: str | None) -> str | None:
@@ -416,19 +423,57 @@ class ExamService:
         self.invalidate_cache()
         return self.get_set(set_id)
 
-    def _find_duplicate_question_id(self, conn, *, set_id: int, question_text: str, exclude_question_id: int | None = None) -> int | None:
+    def _question_similarity_ratio(self, first: str | None, second: str | None) -> float:
+        first_key = self._build_question_match_key(first)
+        second_key = self._build_question_match_key(second)
+        if not first_key or not second_key:
+            return 0.0
+        if first_key == second_key:
+            return 1.0
+        return SequenceMatcher(None, first_key, second_key).ratio()
+
+    def _find_similar_question(
+        self,
+        conn,
+        *,
+        set_id: int,
+        question_text: str,
+        exclude_question_id: int | None = None,
+        threshold: float = 0.98,
+    ) -> dict | None:
         rows = conn.execute(
-            "SELECT question_id, question_text FROM questions WHERE set_id = ? ORDER BY question_id",
+            """
+            SELECT
+                question_id,
+                question_text,
+                option_a,
+                option_b,
+                option_c,
+                option_d,
+                correct_option,
+                explanation,
+                image_path,
+                time_limit
+            FROM questions
+            WHERE set_id = ?
+            ORDER BY question_id
+            """,
             (set_id,),
         ).fetchall()
-        match_key = self._build_question_match_key(question_text)
+
+        best_match = None
         for row in rows:
             row_question_id = int(row["question_id"])
             if exclude_question_id is not None and row_question_id == exclude_question_id:
                 continue
-            if self._build_question_match_key(row["question_text"]) == match_key:
-                return row_question_id
-        return None
+            similarity_ratio = self._question_similarity_ratio(question_text, row["question_text"])
+            if similarity_ratio < threshold:
+                continue
+            candidate = dict(row)
+            candidate["similarity_ratio"] = similarity_ratio
+            if best_match is None or similarity_ratio > float(best_match["similarity_ratio"]):
+                best_match = candidate
+        return self._serialize_question_row(best_match) if best_match else None
 
     def save_question(
         self,
@@ -441,6 +486,7 @@ class ExamService:
         image_path: str | None = None,
         time_limit: int | None = None,
         question_id: int | None = None,
+        allow_similar_duplicate: bool = False,
     ) -> dict:
         set_item = self.get_set(int(set_id))
         if not set_item:
@@ -456,27 +502,27 @@ class ExamService:
         if not cleaned_question_text:
             raise ValueError("Question text is required.")
 
-        duplicate_action = "created"
         with database.connection() as conn:
-            duplicate_question_id = self._find_duplicate_question_id(
+            similar_question = self._find_similar_question(
                 conn,
                 set_id=int(set_id),
                 question_text=cleaned_question_text,
                 exclude_question_id=int(question_id) if question_id else None,
             )
-            original_question_id = int(question_id) if question_id else None
-            target_question_id = original_question_id
-            question_id_to_delete_after_replace = None
-            if target_question_id is None and duplicate_question_id is not None:
-                target_question_id = duplicate_question_id
-                duplicate_action = "replaced"
-            elif target_question_id is not None and duplicate_question_id is not None:
-                target_question_id = duplicate_question_id
-                duplicate_action = "replaced"
-                if original_question_id != duplicate_question_id:
-                    question_id_to_delete_after_replace = original_question_id
-            elif target_question_id is not None:
-                duplicate_action = "updated"
+            if similar_question and not allow_similar_duplicate:
+                raise SimilarQuestionError(
+                    "Similar question already exists in this set",
+                    duplicate_details={
+                        "message": "Similar question already exists in this set",
+                        "set_id": int(set_id),
+                        "set_title": set_item.get("title"),
+                        "question_id": int(question_id) if question_id else None,
+                        "matched_question": similar_question,
+                    },
+                )
+
+            duplicate_action = "updated" if question_id else "created"
+            target_question_id = int(question_id) if question_id else None
 
             if target_question_id is not None:
                 cursor = conn.execute(
@@ -512,8 +558,6 @@ class ExamService:
                 )
                 if cursor.rowcount <= 0:
                     raise ValueError("Question not found.")
-                if question_id_to_delete_after_replace is not None:
-                    conn.execute("DELETE FROM questions WHERE question_id = ?", (question_id_to_delete_after_replace,))
                 saved_question_id = target_question_id
             else:
                 cursor = conn.execute(
@@ -574,6 +618,7 @@ class ExamService:
             explanation=explanation,
             image_path=image_path,
             time_limit=time_limit,
+            allow_similar_duplicate=False,
         )
 
     def update_question(
@@ -587,6 +632,7 @@ class ExamService:
         explanation: str | None = None,
         image_path: str | None = None,
         time_limit: int | None = None,
+        allow_similar_duplicate: bool = False,
     ) -> dict:
         return self.save_question(
             question_id=question_id,
@@ -597,6 +643,7 @@ class ExamService:
             explanation=explanation,
             image_path=image_path,
             time_limit=time_limit,
+            allow_similar_duplicate=allow_similar_duplicate,
         )
 
     def get_category(self, category_id: int) -> dict | None:

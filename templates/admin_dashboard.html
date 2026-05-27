@@ -162,46 +162,101 @@
         </div>
 
         <div class="form-card" id="question-editor" data-admin-panel tabindex="-1">
-            <h2>{{ 'Edit question' if editing_question else 'Add single question' }}</h2>
+            {% set manual_duplicate_form = pending_question_form_data if pending_question_duplicate and pending_question_duplicate.mode == 'manual' else {} %}
+            <h2>{{ 'Edit question' if (manual_duplicate_form and manual_duplicate_form.question_id) or editing_question else 'Add single question' }}</h2>
+            {% if pending_question_duplicate and pending_question_duplicate.mode == 'manual' %}
+            <div class="data-card">
+                <h3>Similar question already exists in this set</h3>
+                <p>{{ pending_question_duplicate.message }}</p>
+                {% if pending_question_duplicate.set_title %}<p><strong>Set:</strong> {{ pending_question_duplicate.set_title }}</p>{% endif %}
+                {% if manual_duplicate_form.question_text %}<p><strong>Pending question:</strong> {{ manual_duplicate_form.question_text }}</p>{% endif %}
+                <p><strong>Matched question:</strong> {{ pending_question_duplicate.matched_question.question_text }}</p>
+                <p><strong>Similarity:</strong> {{ '%.2f'|format((pending_question_duplicate.matched_question.similarity_ratio or 0) * 100) }}%</p>
+                <div class="mini-table">
+                    <p><strong>Existing options:</strong></p>
+                    <p>A. {{ pending_question_duplicate.matched_question.option_a }}</p>
+                    <p>B. {{ pending_question_duplicate.matched_question.option_b }}</p>
+                    <p>C. {{ pending_question_duplicate.matched_question.option_c }}</p>
+                    <p>D. {{ pending_question_duplicate.matched_question.option_d }}</p>
+                </div>
+                <div class="hero-actions">
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="confirm_similar_question">
+                        <input type="hidden" name="return_anchor" value="question-editor">
+                        <button class="button button-primary" type="submit">Confirm Save Anyway</button>
+                    </form>
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="cancel_similar_question">
+                        <input type="hidden" name="return_anchor" value="question-editor">
+                        <button class="button button-secondary" type="submit">Cancel</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
             <form method="post" accept-charset="UTF-8" enctype="multipart/form-data" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="save_question">
                 <input type="hidden" name="q" value="{{ search_query }}">
                 <input type="hidden" name="return_anchor" value="question-editor">
-                <input type="hidden" name="question_id" value="{{ editing_question.question_id if editing_question else '' }}">
-                <input type="hidden" name="current_image_path" value="{{ editing_question.image_path if editing_question and editing_question.image_path else '' }}">
+                <input type="hidden" name="question_id" value="{{ manual_duplicate_form.question_id if manual_duplicate_form else (editing_question.question_id if editing_question else '') }}">
+                <input type="hidden" name="current_image_path" value="{{ manual_duplicate_form.current_image_path if manual_duplicate_form else (editing_question.image_path if editing_question and editing_question.image_path else '') }}">
                 <label for="question_set_id">Set name</label>
                 <select id="question_set_id" name="set_id">
                     {% for set_choice in set_choices %}
-                    <option value="{{ set_choice.set_id }}" {% if editing_question and editing_question.set_id == set_choice.set_id %}selected{% endif %}>{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
+                    <option value="{{ set_choice.set_id }}" {% if (manual_duplicate_form and manual_duplicate_form.set_id|int == set_choice.set_id) or (not manual_duplicate_form and editing_question and editing_question.set_id == set_choice.set_id) %}selected{% endif %}>{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
                     {% endfor %}
                 </select>
                 <label for="question_text">Question</label>
-                <textarea id="question_text" name="question_text" rows="4">{{ editing_question.question_text if editing_question else '' }}</textarea>
-                <label for="option_a">Option A</label><input id="option_a" name="option_a" type="text" value="{{ editing_question.option_a if editing_question else '' }}">
-                <label for="option_b">Option B</label><input id="option_b" name="option_b" type="text" value="{{ editing_question.option_b if editing_question else '' }}">
-                <label for="option_c">Option C</label><input id="option_c" name="option_c" type="text" value="{{ editing_question.option_c if editing_question else '' }}">
-                <label for="option_d">Option D</label><input id="option_d" name="option_d" type="text" value="{{ editing_question.option_d if editing_question else '' }}">
+                <textarea id="question_text" name="question_text" rows="4">{{ manual_duplicate_form.question_text if manual_duplicate_form else (editing_question.question_text if editing_question else '') }}</textarea>
+                <label for="option_a">Option A</label><input id="option_a" name="option_a" type="text" value="{{ manual_duplicate_form.option_a if manual_duplicate_form else (editing_question.option_a if editing_question else '') }}">
+                <label for="option_b">Option B</label><input id="option_b" name="option_b" type="text" value="{{ manual_duplicate_form.option_b if manual_duplicate_form else (editing_question.option_b if editing_question else '') }}">
+                <label for="option_c">Option C</label><input id="option_c" name="option_c" type="text" value="{{ manual_duplicate_form.option_c if manual_duplicate_form else (editing_question.option_c if editing_question else '') }}">
+                <label for="option_d">Option D</label><input id="option_d" name="option_d" type="text" value="{{ manual_duplicate_form.option_d if manual_duplicate_form else (editing_question.option_d if editing_question else '') }}">
                 <label for="correct_option">Correct option text</label>
-                <input id="correct_option" name="correct_option" type="text" value="{{ editing_question.correct_option if editing_question else '' }}">
+                <input id="correct_option" name="correct_option" type="text" value="{{ manual_duplicate_form.correct_option if manual_duplicate_form else (editing_question.correct_option if editing_question else '') }}">
                 <label for="explanation">Explanation</label>
-                <textarea id="explanation" name="explanation" rows="3">{{ editing_question.explanation if editing_question and editing_question.explanation else '' }}</textarea>
+                <textarea id="explanation" name="explanation" rows="3">{{ manual_duplicate_form.explanation if manual_duplicate_form else (editing_question.explanation if editing_question and editing_question.explanation else '') }}</textarea>
                 <label for="question_image">Question image</label>
                 <input id="question_image" name="question_image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
-                {% if editing_question and editing_question.image_path %}
-                <img class="question-image admin-question-image-preview" src="{{ url_for('media_file', relative_path=editing_question.image_path) }}" alt="Current question image">
-                <label><input type="checkbox" name="remove_image" value="1"> Remove current image</label>
+                {% set manual_or_existing_image_path = manual_duplicate_form.image_path if manual_duplicate_form else (editing_question.image_path if editing_question and editing_question.image_path else '') %}
+                {% if manual_or_existing_image_path %}
+                <img class="question-image admin-question-image-preview" src="{{ url_for('media_file', relative_path=manual_or_existing_image_path) }}" alt="Current question image">
+                <label><input type="checkbox" name="remove_image" value="1" {% if manual_duplicate_form and manual_duplicate_form.remove_image %}checked{% endif %}> Remove current image</label>
                 {% endif %}
                 <label for="time_limit">Time limit in seconds</label>
-                <input id="time_limit" name="time_limit" type="number" min="1" value="{{ editing_question.time_limit if editing_question else '' }}" placeholder="15">
+                <input id="time_limit" name="time_limit" type="number" min="1" value="{{ manual_duplicate_form.time_limit if manual_duplicate_form else (editing_question.time_limit if editing_question else '') }}" placeholder="15">
                 <div class="hero-actions">
-                    <button class="button button-primary" type="submit">{{ 'Update Question' if editing_question else 'Save Question' }}</button>
-                    {% if editing_question %}<a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query) }}#question-editor">Cancel</a>{% endif %}
+                    <button class="button button-primary" type="submit">{{ 'Update Question' if (manual_duplicate_form and manual_duplicate_form.question_id) or editing_question else 'Save Question' }}</button>
+                    {% if (manual_duplicate_form and manual_duplicate_form.question_id) or editing_question %}<a class="button button-secondary" href="{{ url_for('admin.admin_dashboard', q=search_query) }}#question-editor">Cancel</a>{% endif %}
                 </div>
             </form>
         </div>
 
         <div class="form-card" id="bulk-question-upload" data-admin-panel tabindex="-1">
             <h2>Bulk upload questions</h2>
+            {% set bulk_duplicate_form = pending_question_form_data if pending_question_duplicate and pending_question_duplicate.mode == 'bulk' else {} %}
+            {% if pending_question_duplicate and pending_question_duplicate.mode == 'bulk' %}
+            <div class="data-card">
+                <h3>Similar question already exists in this set</h3>
+                <p>{{ pending_question_duplicate.message }}</p>
+                {% if pending_question_duplicate.set_title %}<p><strong>Set:</strong> {{ pending_question_duplicate.set_title }}</p>{% endif %}
+                {% if pending_question_duplicate.line_number %}<p><strong>Import line:</strong> {{ pending_question_duplicate.line_number }}</p>{% endif %}
+                {% if pending_question_duplicate.line_text %}<p><strong>Pending row:</strong> {{ pending_question_duplicate.line_text }}</p>{% endif %}
+                <p><strong>Matched question:</strong> {{ pending_question_duplicate.matched_question.question_text }}</p>
+                <p><strong>Similarity:</strong> {{ '%.2f'|format((pending_question_duplicate.matched_question.similarity_ratio or 0) * 100) }}%</p>
+                <div class="hero-actions">
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="confirm_similar_question">
+                        <input type="hidden" name="return_anchor" value="bulk-question-upload">
+                        <button class="button button-primary" type="submit">Confirm Import Anyway</button>
+                    </form>
+                    <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                        <input type="hidden" name="action" value="cancel_similar_question">
+                        <input type="hidden" name="return_anchor" value="bulk-question-upload">
+                        <button class="button button-secondary" type="submit">Cancel</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
             <form method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true">
                 <input type="hidden" name="action" value="bulk_import">
                 <input type="hidden" name="q" value="{{ search_query }}">
@@ -209,11 +264,11 @@
                 <label for="bulk_set_id">Set name</label>
                 <select id="bulk_set_id" name="set_id">
                     {% for set_choice in set_choices %}
-                    <option value="{{ set_choice.set_id }}">{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
+                    <option value="{{ set_choice.set_id }}" {% if bulk_duplicate_form and bulk_duplicate_form.set_id|int == set_choice.set_id %}selected{% endif %}>{{ set_choice.label }} ({{ set_choice.question_count }} questions)</option>
                     {% endfor %}
                 </select>
                 <label for="bulk_payload">Pipe-separated rows</label>
-                <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg"></textarea>
+                <textarea id="bulk_payload" name="bulk_payload" rows="8" placeholder="Question | Option A | Option B | Option C | Option D | Correct option text | Explanation | 15 | data/images/sample.jpg">{{ bulk_duplicate_form.bulk_payload if bulk_duplicate_form else '' }}</textarea>
                 <button class="button button-primary" type="submit">Import Questions</button>
             </form>
         </div>
