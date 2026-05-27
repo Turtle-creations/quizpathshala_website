@@ -4,7 +4,7 @@ import re
 
 from config import ADMINS, SUPREME_ADMIN_ID
 from db.database import database
-from services.user_service_db import now_iso
+from services.user_service_db import now_iso, user_service
 from utils.logging_utils import get_logger
 
 
@@ -34,8 +34,8 @@ class SupportService:
                 """,
                 (
                     user["user_id"],
-                    user.get("username"),
-                    user.get("full_name") or "Unknown",
+                    user_service.telegram_handle(user),
+                    user_service.telegram_display_name(user),
                     message_text,
                     now_iso(),
                     "open",

@@ -47,11 +47,19 @@ class UserService:
         user_id: int,
         full_name: str,
         username: str | None = None,
+        website_name: str | None = None,
+        telegram_first_name: str | None = None,
+        telegram_username: str | None = None,
+        telegram_full_name: str | None = None,
         is_admin: bool = False,
     ) -> dict:
         timestamp = now_iso()
         computed_is_admin = 1 if (is_admin or self.is_admin(user_id)) else 0
         computed_role = "admin" if computed_is_admin else "user"
+        cleaned_full_name = self._clean_full_name(full_name)
+        cleaned_website_name = None if website_name is None else (self._clean_full_name(website_name) or cleaned_full_name)
+        cleaned_telegram_first_name = self._clean_full_name(telegram_first_name)
+        cleaned_telegram_full_name = self._clean_full_name(telegram_full_name)
 
         with database.connection() as conn:
             row = conn.execute(
@@ -63,19 +71,51 @@ class UserService:
                 conn.execute(
                     """
                     UPDATE users
-                    SET username = ?, full_name = ?, is_admin = ?, user_role = ?, updated_at = ?
+                    SET username = ?,
+                        full_name = ?,
+                        website_name = COALESCE(NULLIF(?, ''), website_name, full_name),
+                        telegram_first_name = COALESCE(NULLIF(?, ''), telegram_first_name),
+                        telegram_username = COALESCE(NULLIF(?, ''), telegram_username),
+                        telegram_full_name = COALESCE(NULLIF(?, ''), telegram_full_name),
+                        is_admin = ?,
+                        user_role = ?,
+                        updated_at = ?
                     WHERE user_id = ?
                     """,
-                    (username, full_name, computed_is_admin, preserved_role, timestamp, user_id),
+                    (
+                        username,
+                        cleaned_full_name,
+                        cleaned_website_name,
+                        cleaned_telegram_first_name,
+                        telegram_username,
+                        cleaned_telegram_full_name,
+                        computed_is_admin,
+                        preserved_role,
+                        timestamp,
+                        user_id,
+                    ),
                 )
             else:
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, full_name, is_admin, user_role, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        user_id, username, full_name, website_name, telegram_first_name,
+                        telegram_username, telegram_full_name, is_admin, user_role, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (user_id, username, full_name, computed_is_admin, preserved_role, timestamp, timestamp),
+                    (
+                        user_id,
+                        username,
+                        cleaned_full_name,
+                        cleaned_website_name or cleaned_full_name,
+                        cleaned_telegram_first_name,
+                        telegram_username,
+                        cleaned_telegram_full_name,
+                        computed_is_admin,
+                        preserved_role,
+                        timestamp,
+                        timestamp,
+                    ),
                 )
 
         return self.get_user(user_id)
@@ -187,17 +227,19 @@ class UserService:
                         phone_number,
                         password_hash,
                         full_name,
+                        website_name,
                         is_admin,
                         user_role,
                         created_at,
                         updated_at
-                    ) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         normalized_email,
                         normalized_email,
                         normalized_phone,
                         password_hash,
+                        cleaned_name,
                         cleaned_name,
                         1 if role == "super_admin" else 0,
                         role,
@@ -218,11 +260,12 @@ class UserService:
                         phone_number,
                         password_hash,
                         full_name,
+                        website_name,
                         is_admin,
                         user_role,
                         created_at,
                         updated_at
-                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         generated_user_id,
@@ -230,6 +273,7 @@ class UserService:
                         normalized_email,
                         normalized_phone,
                         password_hash,
+                        cleaned_name,
                         cleaned_name,
                         1 if role == "super_admin" else 0,
                         role,
@@ -269,7 +313,7 @@ class UserService:
                 conn.execute(
                     """
                     UPDATE users
-                    SET login_identifier = ?, email = ?, phone_number = ?, password_hash = ?, full_name = ?, is_admin = ?, user_role = ?, updated_at = ?
+                    SET login_identifier = ?, email = ?, phone_number = ?, password_hash = ?, full_name = ?, website_name = ?, is_admin = ?, user_role = ?, updated_at = ?
                     WHERE user_id = ?
                     """,
                     (
@@ -277,6 +321,7 @@ class UserService:
                         normalized_email,
                         normalized_phone,
                         password_hash,
+                        self._clean_full_name(full_name),
                         self._clean_full_name(full_name),
                         1 if normalized_role in {"admin", "super_admin"} else 0,
                         normalized_role,
@@ -288,8 +333,8 @@ class UserService:
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, login_identifier, email, phone_number, password_hash, full_name, is_admin, user_role, created_at, updated_at
-                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        user_id, username, login_identifier, email, phone_number, password_hash, full_name, website_name, is_admin, user_role, created_at, updated_at
+                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         resolved_user_id,
@@ -297,6 +342,7 @@ class UserService:
                         normalized_email,
                         normalized_phone,
                         password_hash,
+                        self._clean_full_name(full_name),
                         self._clean_full_name(full_name),
                         1 if normalized_role in {"admin", "super_admin"} else 0,
                         normalized_role,
@@ -350,6 +396,10 @@ class UserService:
             user_id=resolved_user_id,
             username=tg_user.username,
             full_name=tg_user.full_name,
+            website_name=(tg_user.full_name if linked_user_id is None else None),
+            telegram_first_name=getattr(tg_user, "first_name", None),
+            telegram_username=tg_user.username,
+            telegram_full_name=tg_user.full_name,
         )
 
     def get_user(self, user_id: int) -> dict:
@@ -719,6 +769,20 @@ class UserService:
             return {}
 
         user_id = int(user.get("user_id", 0) or 0)
+        website_name = self._clean_full_name(user.get("website_name")) or self._clean_full_name(user.get("full_name"))
+        telegram_full_name = self._clean_full_name(user.get("telegram_full_name"))
+        telegram_first_name = self._clean_full_name(user.get("telegram_first_name"))
+        telegram_username = (user.get("telegram_username") or user.get("username") or "").strip() or None
+        if not telegram_full_name and user.get("username"):
+            telegram_full_name = self._clean_full_name(user.get("full_name"))
+        if not telegram_first_name and telegram_full_name:
+            telegram_first_name = telegram_full_name.split(" ", 1)[0]
+        user["website_name"] = website_name or "QuizPathshala User"
+        user["telegram_full_name"] = telegram_full_name or user["website_name"]
+        user["telegram_first_name"] = telegram_first_name or user["telegram_full_name"].split(" ", 1)[0]
+        user["telegram_username"] = telegram_username
+        user["full_name"] = user["website_name"]
+        user["username"] = user.get("username") or telegram_username
         role = user.get("user_role") or ("admin" if user.get("is_admin") else "user")
         if role == "super_admin":
             user["is_admin"] = 1
@@ -727,6 +791,22 @@ class UserService:
             role = "admin"
         user["user_role"] = role
         return user
+
+    def website_display_name(self, user: dict) -> str:
+        return self._clean_full_name(user.get("website_name") or user.get("full_name")) or "QuizPathshala User"
+
+    def telegram_display_name(self, user: dict) -> str:
+        return (
+            self._clean_full_name(user.get("telegram_full_name"))
+            or self._clean_full_name(user.get("telegram_first_name"))
+            or self._clean_full_name(user.get("full_name"))
+            or (user.get("telegram_username") or user.get("username") or "").strip()
+            or "Telegram User"
+        )
+
+    def telegram_handle(self, user: dict) -> str | None:
+        raw = (user.get("telegram_username") or user.get("username") or "").strip()
+        return raw or None
 
     def _generate_persistent_user_id(self) -> int:
         with database.connection() as conn:

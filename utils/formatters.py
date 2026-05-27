@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from services.user_service_db import user_service
+
 
 OPTION_LABELS = ("A", "B", "C", "D")
 
@@ -20,7 +22,7 @@ def format_profile(user: dict) -> str:
 
     return (
         "<b>👤 Your Profile</b>\n\n"
-        f"<b>Name:</b> {escape_html(user['full_name'])}\n"
+        f"<b>Name:</b> {escape_html(user_service.telegram_display_name(user))}\n"
         f"<b>Quiz Played:</b> {user['quiz_played']}\n"
         f"<b>Correct:</b> {user['correct_answers']}\n"
         f"<b>Wrong:</b> {user['wrong_answers']}\n"
@@ -49,7 +51,7 @@ def format_leaderboard(users: list[dict]) -> str:
     for index, user in enumerate(users, start=1):
         plan = "Premium" if user["is_premium"] else "Free"
         lines.append(
-            f"{index}. {escape_html(user['full_name'])} - {user['score']:.2f} pts ({plan})"
+            f"{index}. {escape_html(user_service.telegram_display_name(user))} - {user['score']:.2f} pts ({plan})"
         )
 
     return "\n".join(lines)

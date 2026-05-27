@@ -105,6 +105,7 @@ class TelegramLinkService:
         token_hash = self._hash_token(raw_token)
         telegram_user_id = int(tg_user.id)
         telegram_username = getattr(tg_user, "username", None)
+        telegram_first_name = getattr(tg_user, "first_name", None)
         telegram_full_name = getattr(tg_user, "full_name", None) or getattr(tg_user, "first_name", "") or "Telegram User"
 
         with database.connection() as conn:
@@ -188,18 +189,26 @@ class TelegramLinkService:
                     (telegram_user_id,),
                 )
 
-            self._merge_telegram_user_into_website_user(conn, telegram_user_id, website_user_id, telegram_username, telegram_full_name)
+            self._merge_telegram_user_into_website_user(
+                conn,
+                telegram_user_id,
+                website_user_id,
+                telegram_username,
+                telegram_first_name,
+                telegram_full_name,
+            )
 
             timestamp = now_iso()
             if same_pair:
                 conn.execute(
                     """
                     UPDATE telegram_account_links
-                    SET telegram_username = ?, telegram_full_name = ?, updated_at = ?
+                    SET telegram_username = ?, telegram_first_name = ?, telegram_full_name = ?, updated_at = ?
                     WHERE website_user_id = ? AND telegram_user_id = ?
                     """,
                     (
                         telegram_username,
+                        telegram_first_name,
                         telegram_full_name,
                         timestamp,
                         website_user_id,
@@ -213,14 +222,16 @@ class TelegramLinkService:
                         website_user_id,
                         telegram_user_id,
                         telegram_username,
+                        telegram_first_name,
                         telegram_full_name,
                         phone_number,
                         linked_at,
                         updated_at
-                    ) VALUES (?, ?, ?, ?, NULL, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
                     ON CONFLICT(website_user_id) DO UPDATE SET
                         telegram_user_id = excluded.telegram_user_id,
                         telegram_username = excluded.telegram_username,
+                        telegram_first_name = excluded.telegram_first_name,
                         telegram_full_name = excluded.telegram_full_name,
                         updated_at = excluded.updated_at
                     """,
@@ -228,6 +239,7 @@ class TelegramLinkService:
                         website_user_id,
                         telegram_user_id,
                         telegram_username,
+                        telegram_first_name,
                         telegram_full_name,
                         timestamp,
                         timestamp,
@@ -321,16 +333,20 @@ class TelegramLinkService:
         telegram_user_id: int,
         website_user_id: int,
         telegram_username: str | None,
+        telegram_first_name: str | None,
         telegram_full_name: str | None,
     ) -> None:
         if int(telegram_user_id) == int(website_user_id):
             conn.execute(
                 """
                 UPDATE users
-                SET username = ?, full_name = COALESCE(NULLIF(full_name, ''), ?), updated_at = ?
+                SET telegram_username = COALESCE(NULLIF(?, ''), telegram_username),
+                    telegram_first_name = COALESCE(NULLIF(?, ''), telegram_first_name),
+                    telegram_full_name = COALESCE(NULLIF(?, ''), telegram_full_name),
+                    updated_at = ?
                 WHERE user_id = ?
                 """,
-                (telegram_username, telegram_full_name or "Telegram User", now_iso(), website_user_id),
+                (telegram_username, telegram_first_name, telegram_full_name or "Telegram User", now_iso(), website_user_id),
             )
             return
 
@@ -343,12 +359,13 @@ class TelegramLinkService:
             conn.execute(
                 """
                 UPDATE users
-                SET username = COALESCE(?, username),
-                    full_name = COALESCE(NULLIF(full_name, ''), ?, full_name),
+                SET telegram_username = COALESCE(NULLIF(?, ''), telegram_username),
+                    telegram_first_name = COALESCE(NULLIF(?, ''), telegram_first_name),
+                    telegram_full_name = COALESCE(NULLIF(?, ''), telegram_full_name),
                     updated_at = ?
                 WHERE user_id = ?
                 """,
-                (telegram_username, telegram_full_name or "Telegram User", now_iso(), website_user_id),
+                (telegram_username, telegram_first_name, telegram_full_name or "Telegram User", now_iso(), website_user_id),
             )
             return
 
@@ -359,6 +376,10 @@ class TelegramLinkService:
             """
             UPDATE users
             SET username = ?,
+                website_name = COALESCE(NULLIF(website_name, ''), NULLIF(full_name, ''), ?),
+                telegram_username = COALESCE(NULLIF(?, ''), NULLIF(telegram_username, ''), NULLIF(username, '')),
+                telegram_first_name = COALESCE(NULLIF(?, ''), NULLIF(telegram_first_name, '')),
+                telegram_full_name = COALESCE(NULLIF(?, ''), NULLIF(telegram_full_name, ''), NULLIF(full_name, '')),
                 phone_number = COALESCE(NULLIF(phone_number, ''), ?),
                 full_name = ?,
                 is_admin = ?,
@@ -378,8 +399,12 @@ class TelegramLinkService:
             """,
             (
                 telegram_username or destination.get("username") or source.get("username"),
+                destination.get("website_name") or destination.get("full_name") or source.get("website_name") or source.get("full_name") or "QuizPathshala User",
+                telegram_username or source.get("telegram_username") or source.get("username"),
+                telegram_first_name or source.get("telegram_first_name"),
+                telegram_full_name or source.get("telegram_full_name") or source.get("full_name"),
                 source.get("phone_number"),
-                destination.get("full_name") or source.get("full_name") or telegram_full_name or "QuizPathshala User",
+                destination.get("website_name") or destination.get("full_name") or source.get("website_name") or source.get("full_name") or "QuizPathshala User",
                 1 if destination.get("is_admin") or source.get("is_admin") else 0,
                 self._preferred_role(destination.get("user_role"), source.get("user_role")),
                 1 if destination.get("is_premium") or source.get("is_premium") else 0,

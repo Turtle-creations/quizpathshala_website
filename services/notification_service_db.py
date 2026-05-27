@@ -407,8 +407,8 @@ class NotificationService:
         return tuple(sorted(set(days)))
 
     def _render_message_for_user(self, message: str, user: dict) -> str:
-        raw_username = (user.get("username") or "").strip()
-        full_name = (user.get("full_name") or "").strip()
+        raw_username = (user_service.telegram_handle(user) or "").strip()
+        full_name = (user_service.telegram_display_name(user) or "").strip()
         first_name = full_name.split()[0] if full_name else raw_username or "there"
         safe_name = full_name or first_name or raw_username or "there"
         safe_username = f"@{raw_username}" if raw_username else first_name

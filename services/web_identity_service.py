@@ -47,6 +47,7 @@ class WebIdentityService:
         return user_service.ensure_profile(
             user_id=int(user_id),
             full_name=full_name,
+            website_name=full_name,
             username=None,
             is_admin=self.is_admin_authenticated(),
         )
@@ -58,6 +59,7 @@ class WebIdentityService:
         return user_service.ensure_profile(
             user_id=current["user_id"],
             full_name=cleaned,
+            website_name=cleaned,
             username=current.get("username"),
             is_admin=self._is_privileged_role(self.get_role()),
         )

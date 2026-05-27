@@ -80,7 +80,7 @@ class TelegramLinkingTests(unittest.TestCase):
         self.assertEqual(int(token_row["website_user_id"]), int(user["user_id"]))
         self.assertFalse(token_row["used_at"])
 
-    def test_linking_merges_telegram_profile_into_website_account(self):
+    def test_linking_keeps_website_name_and_merges_account_stats(self):
         website_user = self._create_user("merge-account")
         telegram_user_id = TEST_TELEGRAM_IDS[0]
 
@@ -106,7 +106,12 @@ class TelegramLinkingTests(unittest.TestCase):
         self.assertEqual(int(resolved_user["user_id"]), int(website_user["user_id"]))
 
         refreshed_website_user = user_service.get_user(int(website_user["user_id"]))
+        self.assertEqual(refreshed_website_user["website_name"], "Merge Account")
+        self.assertEqual(refreshed_website_user["full_name"], "Merge Account")
         self.assertEqual(refreshed_website_user["username"], "merged_user")
+        self.assertEqual(refreshed_website_user["telegram_username"], "merged_user")
+        self.assertEqual(refreshed_website_user["telegram_first_name"], "Merged")
+        self.assertEqual(refreshed_website_user["telegram_full_name"], "Merged User")
         self.assertEqual(int(refreshed_website_user["quiz_played"]), 1)
         self.assertEqual(int(refreshed_website_user["correct_answers"]), 1)
         self.assertAlmostEqual(float(refreshed_website_user["score"]), 1.0)

@@ -117,6 +117,10 @@ class Database:
                 self._ensure_column(conn, "users", "phone_number", "TEXT")
                 self._ensure_column(conn, "users", "password_hash", "TEXT")
                 self._ensure_column(conn, "users", "user_role", "TEXT NOT NULL DEFAULT 'user'")
+                self._ensure_column(conn, "users", "website_name", "TEXT")
+                self._ensure_column(conn, "users", "telegram_first_name", "TEXT")
+                self._ensure_column(conn, "users", "telegram_username", "TEXT")
+                self._ensure_column(conn, "users", "telegram_full_name", "TEXT")
                 self._ensure_column(conn, "users", "is_premium", "INTEGER NOT NULL DEFAULT 0")
                 self._ensure_column(conn, "users", "premium_expires_at", "TEXT")
                 self._ensure_column(conn, "users", "daily_question_date", "TEXT")
@@ -160,6 +164,7 @@ class Database:
                 self._ensure_column(conn, "password_reset_requests", "reset_token_hash", "TEXT")
                 self._ensure_column(conn, "password_reset_requests", "reset_expires_at", "TEXT")
                 self._ensure_column(conn, "password_reset_requests", "password_reset_at", "TEXT")
+                self._ensure_column(conn, "telegram_account_links", "telegram_first_name", "TEXT")
             else:
                 self._initialize_postgres(conn)
 
@@ -168,6 +173,10 @@ class Database:
             self._ensure_column(conn, "users", "phone_number", "TEXT")
             self._ensure_column(conn, "users", "password_hash", "TEXT")
             self._ensure_column(conn, "users", "user_role", "TEXT NOT NULL DEFAULT 'user'")
+            self._ensure_column(conn, "users", "website_name", "TEXT")
+            self._ensure_column(conn, "users", "telegram_first_name", "TEXT")
+            self._ensure_column(conn, "users", "telegram_username", "TEXT")
+            self._ensure_column(conn, "users", "telegram_full_name", "TEXT")
             self._ensure_column(conn, "users", "is_premium", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "users", "premium_expires_at", "TEXT")
             self._ensure_column(conn, "users", "daily_question_date", "TEXT")
@@ -211,6 +220,58 @@ class Database:
             self._ensure_column(conn, "password_reset_requests", "reset_token_hash", "TEXT")
             self._ensure_column(conn, "password_reset_requests", "reset_expires_at", "TEXT")
             self._ensure_column(conn, "password_reset_requests", "password_reset_at", "TEXT")
+            self._ensure_column(conn, "telegram_account_links", "telegram_first_name", "TEXT")
+
+            conn.execute(
+                """
+                UPDATE users
+                SET website_name = COALESCE(NULLIF(website_name, ''), NULLIF(full_name, ''))
+                WHERE COALESCE(NULLIF(website_name, ''), '') = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE users
+                SET telegram_username = COALESCE(NULLIF(telegram_username, ''), NULLIF(username, ''))
+                WHERE COALESCE(NULLIF(telegram_username, ''), '') = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE users
+                SET telegram_full_name = COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, ''))
+                WHERE COALESCE(NULLIF(telegram_full_name, ''), '') = '' AND COALESCE(NULLIF(username, ''), '') <> ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE users
+                SET telegram_first_name = COALESCE(
+                    NULLIF(telegram_first_name, ''),
+                    CASE
+                        WHEN COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')) = '' THEN NULL
+                        WHEN instr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), ' ') > 0
+                            THEN substr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), 1, instr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), ' ') - 1)
+                        ELSE COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, ''))
+                    END
+                )
+                WHERE COALESCE(NULLIF(telegram_first_name, ''), '') = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE telegram_account_links
+                SET telegram_first_name = COALESCE(
+                    NULLIF(telegram_first_name, ''),
+                    CASE
+                        WHEN COALESCE(NULLIF(telegram_full_name, ''), '') = '' THEN NULL
+                        WHEN instr(telegram_full_name, ' ') > 0 THEN substr(telegram_full_name, 1, instr(telegram_full_name, ' ') - 1)
+                        ELSE telegram_full_name
+                    END
+                )
+                WHERE COALESCE(NULLIF(telegram_first_name, ''), '') = ''
+                """
+            )
 
             conn.execute(
                 """
@@ -248,6 +309,7 @@ class Database:
                     website_user_id BIGINT NOT NULL UNIQUE,
                     telegram_user_id BIGINT NOT NULL UNIQUE,
                     telegram_username TEXT,
+                    telegram_first_name TEXT,
                     telegram_full_name TEXT,
                     phone_number TEXT,
                     linked_at TEXT NOT NULL,
@@ -508,6 +570,10 @@ class Database:
                 password_hash TEXT,
                 user_role TEXT NOT NULL DEFAULT 'user',
                 full_name TEXT NOT NULL,
+                website_name TEXT,
+                telegram_first_name TEXT,
+                telegram_username TEXT,
+                telegram_full_name TEXT,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 is_premium INTEGER NOT NULL DEFAULT 0,
                 premium_expires_at TEXT,
@@ -716,6 +782,7 @@ class Database:
                 website_user_id BIGINT NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
                 telegram_user_id BIGINT NOT NULL UNIQUE,
                 telegram_username TEXT,
+                telegram_first_name TEXT,
                 telegram_full_name TEXT,
                 phone_number TEXT,
                 linked_at TEXT NOT NULL,
@@ -753,6 +820,10 @@ class Database:
             password_hash TEXT,
             user_role TEXT NOT NULL DEFAULT 'user',
             full_name TEXT NOT NULL,
+            website_name TEXT,
+            telegram_first_name TEXT,
+            telegram_username TEXT,
+            telegram_full_name TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_premium INTEGER NOT NULL DEFAULT 0,
             premium_expires_at TEXT,
@@ -955,6 +1026,7 @@ class Database:
             website_user_id INTEGER NOT NULL UNIQUE,
             telegram_user_id INTEGER NOT NULL UNIQUE,
             telegram_username TEXT,
+            telegram_first_name TEXT,
             telegram_full_name TEXT,
             phone_number TEXT,
             linked_at TEXT NOT NULL,
