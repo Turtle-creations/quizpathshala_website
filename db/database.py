@@ -243,31 +243,24 @@ class Database:
                 WHERE COALESCE(NULLIF(telegram_full_name, ''), '') = '' AND COALESCE(NULLIF(username, ''), '') <> ''
                 """
             )
+            users_telegram_name_expr = "COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, ''))"
+            account_links_name_expr = "COALESCE(NULLIF(telegram_full_name, ''), '')"
             conn.execute(
-                """
+                f"""
                 UPDATE users
                 SET telegram_first_name = COALESCE(
                     NULLIF(telegram_first_name, ''),
-                    CASE
-                        WHEN COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')) = '' THEN NULL
-                        WHEN instr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), ' ') > 0
-                            THEN substr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), 1, instr(COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, '')), ' ') - 1)
-                        ELSE COALESCE(NULLIF(telegram_full_name, ''), NULLIF(full_name, ''))
-                    END
+                    {self._first_word_sql(users_telegram_name_expr)}
                 )
                 WHERE COALESCE(NULLIF(telegram_first_name, ''), '') = ''
                 """
             )
             conn.execute(
-                """
+                f"""
                 UPDATE telegram_account_links
                 SET telegram_first_name = COALESCE(
                     NULLIF(telegram_first_name, ''),
-                    CASE
-                        WHEN COALESCE(NULLIF(telegram_full_name, ''), '') = '' THEN NULL
-                        WHEN instr(telegram_full_name, ' ') > 0 THEN substr(telegram_full_name, 1, instr(telegram_full_name, ' ') - 1)
-                        ELSE telegram_full_name
-                    END
+                    {self._first_word_sql(account_links_name_expr)}
                 )
                 WHERE COALESCE(NULLIF(telegram_first_name, ''), '') = ''
                 """
@@ -543,6 +536,24 @@ class Database:
         ).fetchone()
         if not row:
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    def _first_word_sql(self, value_expression: str) -> str:
+        if self.is_sqlite:
+            return (
+                "CASE "
+                f"WHEN {value_expression} = '' THEN NULL "
+                f"WHEN instr({value_expression}, ' ') > 0 THEN substr({value_expression}, 1, instr({value_expression}, ' ') - 1) "
+                f"ELSE {value_expression} "
+                "END"
+            )
+
+        return (
+            "CASE "
+            f"WHEN {value_expression} = '' THEN NULL "
+            f"WHEN POSITION(' ' IN {value_expression}) > 0 THEN substring({value_expression} FROM 1 FOR POSITION(' ' IN {value_expression}) - 1) "
+            f"ELSE {value_expression} "
+            "END"
+        )
 
     def _initialize_postgres(self, conn):
         statements = [
