@@ -712,7 +712,8 @@ textarea:focus {
 
 .quiz-rules-modal__actions .button {
     flex: 1 1 11rem;
-    min-height: 2.9rem;
+    min-height: 3.1rem;
+    padding: 0.8rem 1rem;
 }
 
 body.modal-open {
@@ -1052,6 +1053,13 @@ th, td {
 
     .quiz-rules-modal__actions {
         flex-direction: column;
+        gap: 0.65rem;
+    }
+
+    .quiz-rules-modal__actions .button {
+        width: 100%;
+        min-height: 3rem;
+        padding: 0.78rem 1rem;
     }
 }
 
