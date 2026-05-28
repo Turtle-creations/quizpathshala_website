@@ -20,6 +20,8 @@ class QuizService:
     MAX_PAUSES = 4
     QUIZ_COUNT_OPTIONS = (20, 50, 100)
     MAX_QUESTIONS_PER_QUIZ = 100
+    FAST_ANSWER_BONUS_SECONDS = 5
+    MAX_ACCUMULATED_BONUS_SECONDS = 60
 
     def __init__(self):
         self.sessions: dict[int, dict] = {}
@@ -60,13 +62,19 @@ class QuizService:
         questions = questions[:count]
 
         self._cancel_background_jobs(user_id)
+        initial_bonus_seconds = 0
+        initial_time_limit = self._effective_time_limit(questions[0]["time_limit"], initial_bonus_seconds)
         self.sessions[user_id] = {
             "set_id": set_id,
             "requested_count": count,
             "questions": questions,
             "index": 0,
             "started_at": time.time(),
-            "deadline": time.time() + questions[0]["time_limit"],
+            "question_elapsed_seconds": 0.0,
+            "bonus_seconds": initial_bonus_seconds,
+            "current_bonus_seconds": initial_bonus_seconds,
+            "current_time_limit": initial_time_limit,
+            "deadline": time.time() + initial_time_limit,
             "paused": False,
             "pause_count": 0,
             "answered": False,
@@ -184,6 +192,8 @@ class QuizService:
         correct_index = question["correct_index"]
         correct = False
         feedback = ""
+        bonus_awarded = 0
+        total_bonus_seconds = session.get("bonus_seconds", 0)
 
         if action == "answer":
             selected_text = question["options"][selected_index]["text"]
@@ -192,6 +202,15 @@ class QuizService:
                 session["correct_count"] += 1
                 user_service.record_answer(user_id, True)
                 feedback = "✅ Correct"
+                if self._is_fast_correct_answer(session):
+                    previous_bonus = session.get("bonus_seconds", 0)
+                    updated_bonus = min(
+                        self.MAX_ACCUMULATED_BONUS_SECONDS,
+                        previous_bonus + self.FAST_ANSWER_BONUS_SECONDS,
+                    )
+                    bonus_awarded = updated_bonus - previous_bonus
+                    session["bonus_seconds"] = updated_bonus
+                    total_bonus_seconds = updated_bonus
             else:
                 session["wrong_count"] += 1
                 user_service.record_answer(user_id, False)
@@ -230,6 +249,8 @@ class QuizService:
             "selected_index": selected_index,
             "correct_index": correct_index,
             "feedback": feedback,
+            "bonus_awarded": bonus_awarded,
+            "total_bonus_seconds": total_bonus_seconds,
             "correct_answer": question["correct_answer"],
             "question_id": question["question_id"],
             "question_token": locked_token,
@@ -248,6 +269,7 @@ class QuizService:
 
         session["paused"] = True
         session["pause_count"] += 1
+        session["question_elapsed_seconds"] = self._elapsed_answer_seconds(session)
         session["remaining_time"] = max(0, int(session["deadline"] - time.time()))
         self._cancel_countdown_task(user_id)
         self.refresh_question_token(user_id)
@@ -297,8 +319,13 @@ class QuizService:
             logger.info("Next question triggered | user_id=%s reached_end=1", user_id)
             return False
 
+        current_bonus_seconds = session.get("bonus_seconds", 0)
+        current_time_limit = self._effective_time_limit(question["time_limit"], current_bonus_seconds)
         session["started_at"] = time.time()
-        session["deadline"] = time.time() + question["time_limit"]
+        session["question_elapsed_seconds"] = 0.0
+        session["current_bonus_seconds"] = current_bonus_seconds
+        session["current_time_limit"] = current_time_limit
+        session["deadline"] = time.time() + current_time_limit
         session["active_question_token"] = self._new_token()
         logger.info(
             "Next question triggered | user_id=%s question_id=%s index=%s",
@@ -329,6 +356,24 @@ class QuizService:
         if session.get("paused"):
             return int(session.get("remaining_time", 0))
         return max(0, int(session["deadline"] - time.time()))
+
+    def current_bonus_seconds(self, user_id: int) -> int:
+        session = self.sessions.get(user_id)
+        if not session:
+            return 0
+        return int(session.get("current_bonus_seconds", 0))
+
+    def total_bonus_seconds(self, user_id: int) -> int:
+        session = self.sessions.get(user_id)
+        if not session:
+            return 0
+        return int(session.get("bonus_seconds", 0))
+
+    def current_time_limit(self, user_id: int) -> int:
+        session = self.sessions.get(user_id)
+        if not session:
+            return DEFAULT_QUESTION_TIME
+        return int(session.get("current_time_limit", DEFAULT_QUESTION_TIME))
 
     def set_question_message(self, user_id: int, chat_id: int, message_id: int):
         session = self.sessions.get(user_id)
@@ -426,6 +471,19 @@ class QuizService:
             task.cancel()
         if session:
             session["advance_task"] = None
+
+    def _effective_time_limit(self, question_time_limit: int, bonus_seconds: int) -> int:
+        return max(1, int(question_time_limit) + min(max(int(bonus_seconds), 0), self.MAX_ACCUMULATED_BONUS_SECONDS))
+
+    def _elapsed_answer_seconds(self, session: dict) -> float:
+        started_at = float(session.get("started_at") or time.time())
+        carried_seconds = float(session.get("question_elapsed_seconds") or 0.0)
+        return carried_seconds + max(0.0, time.time() - started_at)
+
+    def _is_fast_correct_answer(self, session: dict) -> bool:
+        elapsed_seconds = self._elapsed_answer_seconds(session)
+        current_time_limit = max(1, int(session.get("current_time_limit") or DEFAULT_QUESTION_TIME))
+        return elapsed_seconds < (current_time_limit / 2)
 
     def _new_token(self) -> str:
         return secrets.token_hex(4)

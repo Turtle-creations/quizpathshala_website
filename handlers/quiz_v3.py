@@ -226,7 +226,11 @@ async def _render_new_question(message, user_id: int, context: ContextTypes.DEFA
         quiz_service.set_image_message(user_id, None)
 
     question_message = await message.reply_text(
-        _question_message_text(quiz_service.remaining_seconds(user_id)),
+        _question_message_text(
+            quiz_service.remaining_seconds(user_id),
+            bonus_seconds=quiz_service.current_bonus_seconds(user_id),
+            time_limit_seconds=quiz_service.current_time_limit(user_id),
+        ),
         parse_mode=ParseMode.HTML,
         reply_markup=quiz_question_keyboard(
             question["options"],
@@ -267,7 +271,11 @@ async def _send_current_question_by_chat(
 
     question_message = await context.bot.send_message(
         chat_id=chat_id,
-        text=_question_message_text(quiz_service.remaining_seconds(user_id)),
+        text=_question_message_text(
+            quiz_service.remaining_seconds(user_id),
+            bonus_seconds=quiz_service.current_bonus_seconds(user_id),
+            time_limit_seconds=quiz_service.current_time_limit(user_id),
+        ),
         parse_mode=ParseMode.HTML,
         reply_markup=quiz_question_keyboard(
             question["options"],
@@ -289,7 +297,12 @@ async def _render_question(
     if not session or not question:
         return
 
-    text = _question_message_text(quiz_service.remaining_seconds(user_id), extra_feedback=extra_feedback)
+    text = _question_message_text(
+        quiz_service.remaining_seconds(user_id),
+        bonus_seconds=quiz_service.current_bonus_seconds(user_id),
+        time_limit_seconds=quiz_service.current_time_limit(user_id),
+        extra_feedback=extra_feedback,
+    )
     try:
         await context.bot.edit_message_text(
             chat_id=session["question_chat_id"],
@@ -319,6 +332,8 @@ async def _render_locked_question(
 
     text = _question_message_text(
         0,
+        bonus_seconds=quiz_service.current_bonus_seconds(user_id),
+        time_limit_seconds=quiz_service.current_time_limit(user_id),
         extra_feedback=_completion_feedback_text(feedback, correct_answer),
     )
     try:
@@ -400,7 +415,7 @@ async def complete_question(
     await _render_locked_question(
         context,
         user_id,
-        result["feedback"],
+        _result_feedback_text(result),
         result["correct_answer"],
     )
 
@@ -498,9 +513,16 @@ async def _send_summary_to_chat(
 def _question_message_text(
     remaining_seconds: int,
     *,
+    bonus_seconds: int = 0,
+    time_limit_seconds: int | None = None,
     extra_feedback: str | None = None,
 ) -> str:
     parts = ["<b>Choose one option.</b>", f"⏳ {remaining_seconds}s left"]
+    parts = ["<b>Choose one option.</b>"]
+    if time_limit_seconds is not None:
+        parts.append(f"<b>Timer:</b> {time_limit_seconds}s")
+    parts.append(f"⏳ {remaining_seconds}s left")
+    parts.append(f"🎁 Current bonus: +{bonus_seconds}s")
     if extra_feedback:
         parts.extend(["", extra_feedback])
     return "\n".join(parts)
@@ -511,6 +533,19 @@ def _completion_feedback_text(feedback: str, correct_answer: str) -> str:
         f"{feedback}\n"
         f"<b>Correct answer:</b> {html.escape(correct_answer)}"
     )
+
+
+def _result_feedback_text(result: dict) -> str:
+    feedback = result["feedback"]
+    bonus_awarded = int(result.get("bonus_awarded") or 0)
+    total_bonus_seconds = int(result.get("total_bonus_seconds") or 0)
+    if bonus_awarded > 0:
+        feedback = (
+            f"{feedback}\n"
+            f"🎁 Fast answer bonus: +{bonus_awarded}s\n"
+            f"🎁 Next question bonus: +{total_bonus_seconds}s"
+        )
+    return feedback
 
 
 def _summary_text(title: str, summary: dict) -> str:
