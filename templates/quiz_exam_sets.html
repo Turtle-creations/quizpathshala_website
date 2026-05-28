@@ -195,14 +195,40 @@ document.addEventListener("DOMContentLoaded", function () {
     var rulesConfirmButton = document.getElementById("quiz-rules-confirm");
     var pendingForm = null;
     var lastTrigger = null;
+    var startForms = Array.prototype.slice.call(document.querySelectorAll("[data-quiz-start-form='true']"));
 
-    function closeRulesModal() {
+    startForms.forEach(function (form) {
+        Array.prototype.slice.call(form.querySelectorAll("button, input[type='submit']")).forEach(function (button) {
+            button.dataset.initialDisabled = button.disabled ? "true" : "false";
+        });
+    });
+
+    function restoreStartFormState(form) {
+        if (!form) {
+            return;
+        }
+        form.dataset.submitting = "false";
+        form.dataset.rulesConfirmed = "false";
+        Array.prototype.slice.call(form.querySelectorAll("button, input[type='submit']")).forEach(function (button) {
+            button.disabled = button.dataset.initialDisabled === "true";
+        });
+    }
+
+    function restoreAllStartForms() {
+        startForms.forEach(restoreStartFormState);
+    }
+
+    function closeRulesModal(restoreState) {
         if (!rulesModal) {
             return;
         }
+        var shouldRestoreState = restoreState !== false;
         rulesModal.hidden = true;
         rulesModal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("modal-open");
+        if (shouldRestoreState) {
+            restoreStartFormState(pendingForm);
+        }
         if (lastTrigger && typeof lastTrigger.focus === "function") {
             lastTrigger.focus();
         }
@@ -228,14 +254,28 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    Array.prototype.slice.call(document.querySelectorAll("[data-quiz-start-form='true']")).forEach(function (form) {
+    startForms.forEach(function (form) {
+        var submitButton = form.querySelector("button[type='submit']");
+        if (submitButton && !submitButton.disabled) {
+            submitButton.addEventListener("click", function (event) {
+                if (form.dataset.rulesConfirmed === "true") {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                restoreStartFormState(form);
+                openRulesModal(form, submitButton);
+            });
+        }
         form.addEventListener("submit", function (event) {
             if (form.dataset.rulesConfirmed === "true") {
                 form.dataset.rulesConfirmed = "false";
                 return;
             }
             event.preventDefault();
-            openRulesModal(form, form.querySelector("button[type='submit']"));
+            event.stopPropagation();
+            restoreStartFormState(form);
+            openRulesModal(form, submitButton || form.querySelector("button[type='submit']"));
         });
     });
 
@@ -247,7 +287,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             pendingForm.dataset.rulesConfirmed = "true";
             var formToSubmit = pendingForm;
-            closeRulesModal();
+            closeRulesModal(false);
             if (typeof formToSubmit.requestSubmit === "function") {
                 formToSubmit.requestSubmit();
                 return;
@@ -264,6 +304,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && rulesModal && !rulesModal.hidden) {
+            closeRulesModal();
+        }
+    });
+
+    window.addEventListener("pageshow", function () {
+        restoreAllStartForms();
+        if (rulesModal && !rulesModal.hidden) {
             closeRulesModal();
         }
     });
