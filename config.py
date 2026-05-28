@@ -70,7 +70,7 @@ STATIC_DIR = BASE_DIR / "static"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SECRET_KEY = (os.getenv("SECRET_KEY") or "quizpathshala-web-secret").strip()
 PORT = int(os.getenv("PORT", "10000"))
-DEFAULT_QUESTION_TIME = int(os.getenv("DEFAULT_QUESTION_TIME", "15"))
+DEFAULT_QUESTION_TIME = int(os.getenv("DEFAULT_QUESTION_TIME", "20"))
 FREE_DAILY_QUESTION_LIMIT = int(os.getenv("FREE_DAILY_QUESTION_LIMIT", "10"))
 
 SITE_NAME = "QuizPathshala"

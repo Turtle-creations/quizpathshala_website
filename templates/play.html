@@ -12,6 +12,7 @@
             <div class="timer-card quiz-timer-card">
                 <span>Time left</span>
                 <strong id="timer-value">{{ question.remaining_seconds }}</strong>
+                <p class="helper-text quiz-play-helper">Base {{ question.time_limit }} sec | Current bonus +{{ question.current_bonus_seconds or quiz_session.bonus_seconds or 0 }} sec | Total {{ question.allowed_seconds or question.time_limit }} sec</p>
             </div>
         </div>
 
@@ -59,6 +60,14 @@
                     Wrong
                     {% endif %}
                 </div>
+                <p class="helper-text quiz-play-helper">
+                    {% if active_result.bonus_awarded_seconds %}
+                    Fast answer bonus earned: +{{ active_result.bonus_awarded_seconds }} sec.
+                    {% else %}
+                    No bonus earned on this question.
+                    {% endif %}
+                    Next question bonus: {{ active_result.next_bonus_seconds or quiz_session.bonus_seconds or 0 }} sec.
+                </p>
 
                 <div class="option-list option-list-review">
                     {% for option in active_result.options %}

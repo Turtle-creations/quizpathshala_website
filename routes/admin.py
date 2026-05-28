@@ -656,6 +656,14 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
             if not updated:
                 raise ValueError("Set not found.")
             flash("Set order updated successfully.", "success")
+        elif action == "rename_set":
+            updated = web_admin_service.update_set_title(
+                int(request.form.get("set_id", "0")),
+                request.form.get("title", ""),
+            )
+            if not updated:
+                raise ValueError("Set not found.")
+            flash("Set name updated successfully.", "success")
         elif action == "save_question":
             question_id = int(request.form.get("question_id", "0") or "0") or None
             existing_question = web_admin_service.get_question(question_id) if question_id else None

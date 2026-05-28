@@ -18,6 +18,8 @@ from utils.logging_utils import get_logger
 class WebQuizService:
     QUIZ_COUNT_OPTIONS = (20, 50, 100)
     MAX_QUESTIONS_PER_QUIZ = 100
+    BONUS_INCREMENT_SECONDS = 5
+    MAX_BONUS_SECONDS = 60
     SESSION_STORAGE_KEY = "active_quiz_session"
     ACTIVE_SESSION_TABLE = "web_quiz_sessions"
     FULL_SET_EXAM_TITLE = "SSE"
@@ -122,6 +124,7 @@ class WebQuizService:
             "paused_at": None,
             "paused_remaining_seconds": None,
             "max_breaks": int(settings.get("max_breaks") or 0),
+            "bonus_seconds": 0,
         }
         self._persist_session(user_id)
         self.logger.info(
@@ -203,6 +206,7 @@ class WebQuizService:
             "allow_resume": bool(settings.get("allow_resume", True)),
             "max_breaks": int(quiz_session.get("max_breaks") or settings.get("max_breaks") or 0),
             "too_many_breaks": self.has_exceeded_break_limit(quiz_session, max_breaks=int(quiz_session.get("max_breaks") or settings.get("max_breaks") or 0)),
+            "bonus_seconds": min(max(int(quiz_session.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS),
         }
 
     def get_current_question(self, user_id: int) -> dict | None:
@@ -216,6 +220,8 @@ class WebQuizService:
         if index < 0 or index >= len(questions):
             return None
         question = deepcopy(questions[index])
+        question["current_bonus_seconds"] = min(max(int(session.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS)
+        question["allowed_seconds"] = self._question_allowed_seconds(question, bonus_seconds=question["current_bonus_seconds"])
         question["remaining_seconds"] = self.remaining_seconds(user_id)
         question["number"] = index + 1
         question["total"] = len(questions)
@@ -259,7 +265,8 @@ class WebQuizService:
         questions = session.get("questions") or []
         index = int(session.get("index") or 0)
         question = questions[index] if 0 <= index < len(questions) else None
-        time_limit = int((question or {}).get("time_limit") or DEFAULT_QUESTION_TIME)
+        bonus_seconds = min(max(int(session.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS)
+        time_limit = self._question_allowed_seconds(question or {}, bonus_seconds=bonus_seconds)
         paused_remaining = int(session.get("paused_remaining_seconds") or 0)
         elapsed = max(time_limit - paused_remaining, 0)
         session["current_question_started_at"] = time.time() - elapsed
@@ -342,6 +349,8 @@ class WebQuizService:
             "next_index": min(current_index + 1, len(session.get("questions") or [])),
             "options": deepcopy(question["options"]),
             "time_limit": int(question.get("time_limit") or DEFAULT_QUESTION_TIME),
+            "allowed_seconds": int(question.get("allowed_seconds") or self._question_allowed_seconds(question)),
+            "current_bonus_seconds": int(question.get("current_bonus_seconds") or 0),
             "remaining_seconds": self.remaining_seconds(user_id),
         }
 
@@ -363,6 +372,24 @@ class WebQuizService:
             session["skipped_count"] += 1
             result["action"] = "skip" if action == "skip" else "timeout"
             result["selected_text"] = None
+
+        time_taken_seconds = max(result["allowed_seconds"] - result["remaining_seconds"], 0)
+        earned_bonus = (
+            self.BONUS_INCREMENT_SECONDS
+            if result["correct"] and time_taken_seconds < (result["allowed_seconds"] / 2)
+            else 0
+        )
+        next_bonus_seconds = min(
+            max(int(session.get("bonus_seconds") or 0), 0) + earned_bonus,
+            self.MAX_BONUS_SECONDS,
+        )
+        if not result["correct"]:
+            next_bonus_seconds = min(max(int(session.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS)
+        session["bonus_seconds"] = next_bonus_seconds
+        result["time_taken_seconds"] = time_taken_seconds
+        result["bonus_awarded_seconds"] = earned_bonus
+        result["next_bonus_seconds"] = next_bonus_seconds
+        result["earned_fast_bonus"] = earned_bonus > 0
 
         session["locked"] = True
         session["awaiting_next"] = True
@@ -473,7 +500,11 @@ class WebQuizService:
             return 0
         question = questions[index]
         elapsed = int(time.time() - float(session.get("current_question_started_at") or time.time()))
-        return max(0, int(question["time_limit"]) - elapsed)
+        allowed_seconds = self._question_allowed_seconds(
+            question,
+            bonus_seconds=min(max(int(session.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS),
+        )
+        return max(0, allowed_seconds - elapsed)
 
     def user_performance_snapshot(self, user_id: int, limit: int = 8) -> dict:
         user = user_service.get_user(user_id)
@@ -748,6 +779,7 @@ class WebQuizService:
                     else None
                 ),
                 "max_breaks": int(payload.get("max_breaks") or 0),
+                "bonus_seconds": min(max(int(payload.get("bonus_seconds") or 0), 0), self.MAX_BONUS_SECONDS),
             }
         except (TypeError, ValueError):
             return None
@@ -773,6 +805,8 @@ class WebQuizService:
             "correct_index": int(result.get("correct_index") or 0),
             "remaining_seconds": 0,
             "time_limit": int(result.get("time_limit") or DEFAULT_QUESTION_TIME),
+            "allowed_seconds": int(result.get("allowed_seconds") or DEFAULT_QUESTION_TIME),
+            "current_bonus_seconds": int(result.get("current_bonus_seconds") or 0),
             "number": answered_index + 1,
             "total": len(questions),
         }
@@ -794,6 +828,11 @@ class WebQuizService:
             0,
         )
         return item
+
+    def _question_allowed_seconds(self, question: dict | None, bonus_seconds: int | None = None) -> int:
+        base_time = int((question or {}).get("time_limit") or DEFAULT_QUESTION_TIME)
+        normalized_bonus = min(max(int(bonus_seconds or 0), 0), self.MAX_BONUS_SECONDS)
+        return base_time + normalized_bonus
 
     def _summary_payload(
         self,
@@ -845,7 +884,12 @@ class WebQuizService:
             "image_path": result.get("image_path"),
             "options": deepcopy(result.get("options") or []),
             "time_limit": result.get("time_limit"),
+            "allowed_seconds": result.get("allowed_seconds"),
             "remaining_seconds": result.get("remaining_seconds"),
+            "current_bonus_seconds": result.get("current_bonus_seconds"),
+            "bonus_awarded_seconds": result.get("bonus_awarded_seconds"),
+            "next_bonus_seconds": result.get("next_bonus_seconds"),
+            "time_taken_seconds": result.get("time_taken_seconds"),
         }
 
     def _timestamp_now(self) -> str:

@@ -245,6 +245,26 @@ class ExamService:
         parsed = int(time_limit or DEFAULT_QUESTION_TIME)
         return parsed if parsed > 0 else DEFAULT_QUESTION_TIME
 
+    def _clean_set_title(self, value: str | None) -> str:
+        return " ".join(str(value or "").split())
+
+    def _validate_set_title(self, conn, exam_id: int, title: str, *, exclude_set_id: int | None = None) -> str:
+        cleaned_title = self._clean_set_title(title)
+        if not cleaned_title:
+            raise ValueError("Set name is required.")
+        rows = conn.execute(
+            "SELECT set_id, title FROM exam_sets WHERE exam_id = ?",
+            (exam_id,),
+        ).fetchall()
+        normalized_title = cleaned_title.casefold()
+        for row in rows:
+            row_set_id = int(row["set_id"])
+            if exclude_set_id is not None and row_set_id == int(exclude_set_id):
+                continue
+            if self._clean_set_title(row["title"]).casefold() == normalized_title:
+                raise ValueError("A set with this name already exists in this exam.")
+        return cleaned_title
+
     def _default_category_id(self, conn) -> int:
         row = conn.execute(
             "SELECT category_id FROM categories WHERE name = ?",
@@ -369,15 +389,16 @@ class ExamService:
 
     def add_set(self, exam_id: int, title: str, description: str | None = None):
         with database.connection() as conn:
+            cleaned_title = self._validate_set_title(conn, exam_id, title)
             position = self._next_set_position(conn, exam_id)
             cursor = conn.execute(
                 "INSERT INTO exam_sets (exam_id, title, description, position, created_at) VALUES (?, ?, ?, ?, ?)",
-                (exam_id, title.strip(), description, position, timestamp()),
+                (exam_id, cleaned_title, description, position, timestamp()),
             )
             set_id = cursor.lastrowid
         self.invalidate_cache()
         created_set = self.get_set(set_id)
-        logger.info("Set insert success | set_id=%s exam_id=%s title=%s", set_id, exam_id, title.strip())
+        logger.info("Set insert success | set_id=%s exam_id=%s title=%s", set_id, exam_id, cleaned_title)
         return {
             "row_id": set_id,
             "record": created_set,
@@ -398,6 +419,31 @@ class ExamService:
                 WHERE set_id = ?
                 """,
                 (normalized_position, set_id),
+            )
+
+        if cursor.rowcount <= 0:
+            return None
+
+        self.invalidate_cache()
+        return self.get_set(set_id)
+
+    def update_set_title(self, set_id: int, title: str) -> dict | None:
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT exam_id FROM exam_sets WHERE set_id = ?",
+                (set_id,),
+            ).fetchone()
+            if not row:
+                return None
+            exam_id = int(row["exam_id"])
+            cleaned_title = self._validate_set_title(conn, exam_id, title, exclude_set_id=set_id)
+            cursor = conn.execute(
+                """
+                UPDATE exam_sets
+                SET title = ?
+                WHERE set_id = ?
+                """,
+                (cleaned_title, set_id),
             )
 
         if cursor.rowcount <= 0:

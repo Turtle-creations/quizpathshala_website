@@ -300,6 +300,9 @@ class WebAdminService:
     def update_set_position(self, set_id: int, position: int) -> dict | None:
         return exam_service.update_set_position(set_id, position)
 
+    def update_set_title(self, set_id: int, title: str) -> dict | None:
+        return exam_service.update_set_title(set_id, title)
+
     def add_question(
         self,
         *,

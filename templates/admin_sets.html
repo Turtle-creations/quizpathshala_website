@@ -51,6 +51,14 @@
                         <td>
                             <strong>{{ set_item.title }}</strong><br>
                             <span class="helper-text">{{ set_item.description or 'No description' }}</span>
+                            <form class="compact-toolbar" method="post" accept-charset="UTF-8" data-disable-on-submit="true" data-admin-preserve="true" style="margin-top: 0.75rem;">
+                                <input type="hidden" name="action" value="rename_set">
+                                <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                                <input type="hidden" name="page" value="{{ pagination.page }}">
+                                <input type="hidden" name="return_anchor" value="sets-section">
+                                <input name="title" type="text" value="{{ set_item.title }}" aria-label="Edit set name for {{ set_item.title }}">
+                                <button class="button button-secondary" type="submit">Edit Set Name</button>
+                            </form>
                         </td>
                         <td>{{ set_item.question_count }}</td>
                         <td>{{ 'Premium' if set_item.is_premium_locked else 'Free' }}</td>
