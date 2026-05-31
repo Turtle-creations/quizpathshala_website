@@ -492,6 +492,23 @@ class WebAdminService:
                 """,
                 (user_id,),
             ).fetchall()
+            recent_activity = conn.execute(
+                """
+                SELECT
+                    activity_id,
+                    action,
+                    identifier,
+                    ip_address,
+                    user_agent,
+                    details,
+                    created_at
+                FROM user_activity_logs
+                WHERE user_id = ?
+                ORDER BY created_at DESC, activity_id DESC
+                LIMIT 10
+                """,
+                (user_id,),
+            ).fetchall()
 
         return {
             "user": user,
@@ -513,16 +530,12 @@ class WebAdminService:
                 "last_ticket_at": tickets_summary["last_ticket_at"],
             },
             "recent_attempts": [dict(row) for row in recent_attempts],
+            "recent_activity": [dict(row) for row in recent_activity],
         }
 
     def change_user_role(self, target_user_id: int, role: str) -> tuple[dict | None, str]:
-        normalized_role = (role or "").strip().lower()
-        if normalized_role == "admin":
-            return user_service.promote_to_admin(target_user_id)
-        if normalized_role == "user":
-            user = user_service.demote_admin(target_user_id)
-            return user, "updated" if user else "not_found"
-        raise ValueError("Unsupported role change. Only admin and user can be assigned from the web panel.")
+        updated_user = user_service.set_user_role(target_user_id, role)
+        return updated_user, "updated" if updated_user else "not_found"
 
     def list_admin_plans(self) -> list[dict]:
         with database.connection() as conn:
@@ -775,30 +788,26 @@ class WebAdminService:
         )
 
     def _list_user_logs_page(self, conn, *, page: int, date_from: str | None, date_to: str | None) -> tuple[list[dict], dict]:
-        where_sql, params = self._date_filter_sql("qa.created_at", date_from, date_to)
+        where_sql, params = self._date_filter_sql("ual.created_at", date_from, date_to)
         return self._fetch_page(
             conn,
             select_sql=f"""
                 SELECT
-                    qa.attempt_id,
-                    qa.user_id,
-                    qa.created_at,
-                    qa.requested_count,
-                    qa.correct_count,
-                    qa.wrong_count,
-                    qa.skipped_count,
-                    qa.ended_reason,
-                    u.full_name,
-                    s.title AS set_title,
-                    e.title AS exam_title
-                FROM quiz_attempts qa
-                LEFT JOIN users u ON u.user_id = qa.user_id
-                LEFT JOIN exam_sets s ON s.set_id = qa.set_id
-                LEFT JOIN exams e ON e.exam_id = s.exam_id
+                    ual.activity_id,
+                    ual.user_id,
+                    ual.created_at,
+                    ual.action,
+                    ual.identifier,
+                    ual.ip_address,
+                    ual.user_agent,
+                    ual.details,
+                    COALESCE(NULLIF(u.website_name, ''), NULLIF(u.full_name, ''), CAST(ual.user_id AS TEXT)) AS full_name
+                FROM user_activity_logs ual
+                LEFT JOIN users u ON u.user_id = ual.user_id
                 {where_sql}
-                ORDER BY qa.created_at DESC, qa.attempt_id DESC
+                ORDER BY ual.created_at DESC, ual.activity_id DESC
             """,
-            count_sql=f"SELECT COUNT(*) AS count FROM quiz_attempts qa {where_sql}",
+            count_sql=f"SELECT COUNT(*) AS count FROM user_activity_logs ual {where_sql}",
             params=params,
             page=page,
         )

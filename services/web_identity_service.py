@@ -147,7 +147,22 @@ class WebIdentityService:
     def is_admin_authenticated(self) -> bool:
         snapshot = self.get_authenticated_user_snapshot()
         role = snapshot.get("user_role") if snapshot else session.get(self.ROLE_KEY)
-        return bool(snapshot and (self._is_privileged_role(role) or snapshot.get("is_admin"))) or bool(session.get(self.ADMIN_KEY))
+        return bool(snapshot and self.has_admin_console_access(role)) or bool(session.get(self.ADMIN_KEY))
+
+    def has_admin_console_access(self, role: str | None = None) -> bool:
+        return user_service.has_admin_console_access(role or self.get_role())
+
+    def has_full_admin_access(self, role: str | None = None) -> bool:
+        return user_service.has_full_admin_access(role or self.get_role())
+
+    def can_manage_roles(self, role: str | None = None) -> bool:
+        return user_service.can_manage_roles(role or self.get_role())
+
+    def can_view_payment_logs(self, role: str | None = None) -> bool:
+        return user_service.can_view_payment_logs(role or self.get_role())
+
+    def can_use_bulk_upload(self, role: str | None = None) -> bool:
+        return user_service.can_use_bulk_upload(role or self.get_role())
 
     def get_authenticated_user_snapshot(self) -> dict:
         user_id = session.get(self.AUTH_USER_KEY)
@@ -223,7 +238,7 @@ class WebIdentityService:
         return random.randint(7000000000, 7999999999)
 
     def _is_privileged_role(self, role: str | None) -> bool:
-        return str(role or "") in {"admin", "super_admin"}
+        return user_service.has_full_admin_access(role)
 
 
 web_identity_service = WebIdentityService()

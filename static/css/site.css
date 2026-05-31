@@ -584,11 +584,18 @@ textarea:focus {
 }
 
 .quiz-topline-play {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+}
+
+.quiz-play-header {
+    display: grid;
+    gap: 0.55rem;
 }
 
 .quiz-topline-play h1 {
-    margin-bottom: 0.45rem;
+    margin: 0;
     font-size: clamp(2rem, 4vw, 3rem);
 }
 
@@ -596,10 +603,35 @@ textarea:focus {
     margin: 0;
 }
 
+.quiz-play-set-name {
+    color: var(--muted);
+    font-size: 0.86rem;
+    letter-spacing: 0.08em;
+}
+
+.quiz-play-progress {
+    color: var(--muted);
+    font-size: 0.96rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
 .quiz-timer-card {
-    flex-shrink: 0;
-    min-width: 7.5rem;
-    padding: 1rem 1.1rem;
+    width: min(100%, 18rem);
+    min-width: 0;
+    padding: 0.9rem 1rem;
+    margin-top: 0.1rem;
+    align-self: flex-start;
+}
+
+.quiz-timer-card strong {
+    display: block;
+    margin-top: 0.15rem;
+}
+
+.quiz-timer-card .quiz-play-helper {
+    margin-top: 0.35rem;
+    line-height: 1.45;
 }
 
 .question-card-play {
@@ -952,6 +984,18 @@ th, td {
         padding: 1rem 0.95rem 0.85rem;
     }
 
+    .quiz-topline-play h1 {
+        font-size: clamp(1.7rem, 8vw, 2.3rem);
+    }
+
+    .quiz-play-header {
+        gap: 0.5rem;
+    }
+
+    .quiz-timer-card {
+        width: 100%;
+    }
+
     .quiz-play-actions {
         flex-direction: column;
         align-items: stretch;
@@ -966,43 +1010,49 @@ th, td {
     }
 
     .quiz-topline-play {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: start;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
         gap: 0.65rem;
-        width: 100%;
+    }
+
+    .quiz-play-set-name {
+        font-size: 0.8rem;
     }
 
     .quiz-topline-play h1 {
-        font-size: 1.55rem;
-        line-height: 1.15;
-        margin-bottom: 0.3rem;
+        font-size: 1.7rem;
+        line-height: 1.18;
     }
 
-    .quiz-topline-play p {
-        font-size: 0.9rem;
+    .quiz-play-progress {
+        font-size: 0.95rem;
         line-height: 1.45;
     }
 
     .quiz-timer-card {
-        min-width: 4.5rem;
-        padding: 0.45rem 0.55rem;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        padding: 0.85rem 0.95rem;
         border-radius: 16px;
+        margin-top: 0.15rem;
+        align-self: stretch;
     }
 
     .quiz-timer-card span {
-        font-size: 0.72rem;
+        font-size: 0.82rem;
     }
 
     .quiz-timer-card strong {
-        font-size: 1.15rem;
-        line-height: 1;
+        font-size: 1.45rem;
+        line-height: 1.05;
     }
 
     .quiz-timer-card .quiz-play-helper {
-        font-size: 0.72rem;
-        line-height: 1.3;
-        margin-top: 0.2rem;
+        font-size: 0.88rem;
+        line-height: 1.4;
+        margin-top: 0.3rem;
     }
 
     .question-card-play {

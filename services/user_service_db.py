@@ -19,6 +19,9 @@ from utils.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
+VALID_USER_ROLES = {"user", "uploader", "manager", "admin", "super_admin"}
+FULL_ADMIN_ROLES = {"admin", "super_admin"}
+ADMIN_CONSOLE_ROLES = FULL_ADMIN_ROLES | {"manager", "uploader"}
 
 
 def now_iso() -> str:
@@ -41,6 +44,33 @@ def parse_utc_datetime(value: str | None) -> datetime | None:
 
 
 class UserService:
+    def normalize_role(self, role: str | None, *, is_admin: bool = False) -> str:
+        cleaned = str(role or "").strip().lower()
+        if cleaned == "super_admin":
+            return "super_admin"
+        if cleaned in VALID_USER_ROLES:
+            if cleaned in FULL_ADMIN_ROLES:
+                return cleaned
+            if is_admin:
+                return "admin"
+            return cleaned
+        return "admin" if is_admin else "user"
+
+    def has_admin_console_access(self, role: str | None) -> bool:
+        return self.normalize_role(role) in ADMIN_CONSOLE_ROLES
+
+    def has_full_admin_access(self, role: str | None) -> bool:
+        return self.normalize_role(role) in FULL_ADMIN_ROLES
+
+    def can_manage_roles(self, role: str | None) -> bool:
+        return self.has_full_admin_access(role)
+
+    def can_view_payment_logs(self, role: str | None) -> bool:
+        return self.normalize_role(role) in FULL_ADMIN_ROLES | {"manager"}
+
+    def can_use_bulk_upload(self, role: str | None) -> bool:
+        return self.normalize_role(role) in FULL_ADMIN_ROLES | {"uploader"}
+
     def ensure_profile(
         self,
         *,
@@ -55,7 +85,7 @@ class UserService:
     ) -> dict:
         timestamp = now_iso()
         computed_is_admin = 1 if (is_admin or self.is_admin(user_id)) else 0
-        computed_role = "admin" if computed_is_admin else "user"
+        computed_role = self.normalize_role("admin" if computed_is_admin else "user", is_admin=bool(computed_is_admin))
         cleaned_full_name = self._clean_full_name(full_name)
         cleaned_website_name = None if website_name is None else (self._clean_full_name(website_name) or cleaned_full_name)
         cleaned_telegram_first_name = self._clean_full_name(telegram_first_name)
@@ -66,7 +96,7 @@ class UserService:
                 "SELECT user_id, user_role FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
-            preserved_role = row["user_role"] if row and row["user_role"] else computed_role
+            preserved_role = self.normalize_role(row["user_role"] if row and row["user_role"] else computed_role, is_admin=bool(computed_is_admin))
             if row:
                 conn.execute(
                     """
@@ -298,7 +328,7 @@ class UserService:
         normalized_identifier = self._normalize_login_identifier(login_identifier)
         normalized_email = self._normalize_email(login_identifier)
         normalized_phone = self._normalize_phone(phone_number)
-        normalized_role = role if role in {"admin", "super_admin"} else "user"
+        normalized_role = self.normalize_role(role, is_admin=role in FULL_ADMIN_ROLES)
         if not normalized_identifier or not password:
             return {}
 
@@ -323,7 +353,7 @@ class UserService:
                         password_hash,
                         self._clean_full_name(full_name),
                         self._clean_full_name(full_name),
-                        1 if normalized_role in {"admin", "super_admin"} else 0,
+                        1 if normalized_role in FULL_ADMIN_ROLES else 0,
                         normalized_role,
                         timestamp,
                         resolved_user_id,
@@ -344,7 +374,7 @@ class UserService:
                         password_hash,
                         self._clean_full_name(full_name),
                         self._clean_full_name(full_name),
-                        1 if normalized_role in {"admin", "super_admin"} else 0,
+                        1 if normalized_role in FULL_ADMIN_ROLES else 0,
                         normalized_role,
                         timestamp,
                         timestamp,
@@ -395,7 +425,7 @@ class UserService:
                 "SELECT user_role FROM users WHERE user_id = ?",
                 (internal_user_id,),
             ).fetchone()
-        return bool(row and str(row["user_role"] or "") == "super_admin")
+        return bool(row and self.normalize_role(row["user_role"]) == "super_admin")
 
     def is_admin(self, user_id: int) -> bool:
         resolved_user_id = self._coerce_user_id(user_id)
@@ -414,7 +444,7 @@ class UserService:
         if not row:
             return False
 
-        return bool(int(row["is_admin"] or 0)) or str(row["user_role"] or "") in {"admin", "super_admin"}
+        return self.has_full_admin_access(row["user_role"]) or bool(int(row["is_admin"] or 0))
 
     def ensure_user(self, tg_user) -> dict:
         from services.telegram_link_service import telegram_link_service
@@ -463,9 +493,11 @@ class UserService:
         else:
             user = {}
 
-        if user and self.is_admin(user_id) and user.get("user_role") != "super_admin":
-            user["is_admin"] = 1
-            user["user_role"] = "admin"
+        if user:
+            normalized_role = self.normalize_role(user.get("user_role"), is_admin=bool(user.get("is_admin")))
+            if normalized_role in FULL_ADMIN_ROLES:
+                user["is_admin"] = 1
+            user["user_role"] = normalized_role
         return self._normalize_premium_status(user) if user else {}
 
     def list_users(self) -> list[dict]:
@@ -586,6 +618,50 @@ class UserService:
                 WHERE user_id = ?
                 """,
                 (now_iso(), user_id),
+            )
+        return self.get_user(user_id)
+
+    def set_user_role(self, user_id: int, role: str) -> dict | None:
+        normalized_role = self.normalize_role(role)
+        if normalized_role not in VALID_USER_ROLES:
+            raise ValueError("Unsupported role.")
+        if self.is_supreme_admin(user_id):
+            raise ValueError("Super admin role cannot be changed from this panel.")
+
+        timestamp = now_iso()
+        existing = self.get_user(user_id)
+        if existing:
+            display_name = existing.get("website_name") or existing.get("full_name") or f"User {user_id}"
+        else:
+            display_name = f"User {user_id}"
+
+        with database.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    user_id,
+                    username,
+                    full_name,
+                    website_name,
+                    is_admin,
+                    user_role,
+                    created_at,
+                    updated_at
+                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    is_admin = excluded.is_admin,
+                    user_role = excluded.user_role,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    display_name,
+                    display_name,
+                    1 if normalized_role in FULL_ADMIN_ROLES else 0,
+                    normalized_role,
+                    timestamp,
+                    timestamp,
+                ),
             )
         return self.get_user(user_id)
 
@@ -826,12 +902,13 @@ class UserService:
         user["telegram_username"] = telegram_username
         user["full_name"] = user["website_name"]
         user["username"] = user.get("username") or telegram_username
-        role = user.get("user_role") or ("admin" if user.get("is_admin") else "user")
+        role = self.normalize_role(user.get("user_role"), is_admin=bool(user.get("is_admin")))
         if role == "super_admin":
             user["is_admin"] = 1
-        elif self.is_admin(user_id):
+        elif role in FULL_ADMIN_ROLES:
             user["is_admin"] = 1
-            role = "admin"
+        else:
+            user["is_admin"] = 0
         user["user_role"] = role
         return user
 

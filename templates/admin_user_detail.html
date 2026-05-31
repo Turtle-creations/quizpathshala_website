@@ -34,6 +34,19 @@
     <div class="container admin-grid">
         <div class="data-card">
             <h2>Activity summary</h2>
+            {% if can_manage_roles and user_detail.user_role != 'super_admin' %}
+            <form method="post" accept-charset="UTF-8" data-disable-on-submit="true">
+                <label for="target_role">Role</label>
+                <select id="target_role" name="target_role">
+                    {% for role_name in available_roles %}
+                    <option value="{{ role_name }}" {% if user_detail.user_role == role_name %}selected{% endif %}>{{ role_name|title }}</option>
+                    {% endfor %}
+                </select>
+                <div class="hero-actions">
+                    <button class="button button-primary" type="submit">Update Role</button>
+                </div>
+            </form>
+            {% endif %}
             <table>
                 <tbody>
                     <tr><th>Website name</th><td>{{ user_detail.website_name or user_detail.full_name }}</td></tr>
@@ -80,6 +93,27 @@
                     </tr>
                     {% else %}
                     <tr><td colspan="5">No quiz attempts recorded yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Recent user logs</h2>
+            <table>
+                <thead>
+                    <tr><th>When</th><th>Action</th><th>Identifier</th><th>IP</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in recent_activity %}
+                    <tr>
+                        <td>{{ item.created_at|format_user_datetime(current_user) }}</td>
+                        <td>{{ item.action }}</td>
+                        <td>{{ item.identifier or '-' }}</td>
+                        <td>{{ item.ip_address or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No user logs recorded yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

@@ -98,7 +98,7 @@ def payment_page(order_id: str):
     if not order:
         flash("Invalid payment order.", "error")
         return redirect(url_for("premium.premium_page"))
-    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.is_admin_authenticated():
+    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.has_full_admin_access():
         flash("This payment order does not belong to your account.", "error")
         return redirect(url_for("premium.premium_page"))
 
@@ -139,7 +139,7 @@ def payment_client_event(order_id: str):
     order = payment_service.get_order(order_id)
     if not order:
         return jsonify({"detail": "Invalid payment order"}), 404
-    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.is_admin_authenticated():
+    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.has_full_admin_access():
         return jsonify({"detail": "Forbidden"}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -195,7 +195,7 @@ def payment_status_page(order_id: str):
     if not order:
         flash("Invalid payment order.", "error")
         return redirect(url_for("premium.premium_page"))
-    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.is_admin_authenticated():
+    if int(order["user_id"]) != int(user["user_id"]) and not web_identity_service.has_full_admin_access():
         flash("This payment order does not belong to your account.", "error")
         return redirect(url_for("premium.premium_page"))
     tracker = payment_service.order_tracker(order_id) or {}

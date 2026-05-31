@@ -17,6 +17,7 @@ from config import (
     RAZORPAY_WEBHOOK_SECRET,
 )
 from db.database import database
+from services.user_activity_service import user_activity_service
 from services.user_service_db import now_iso, parse_utc_datetime, user_service
 from utils.timezone_utils import format_user_datetime
 from utils.logging_utils import get_logger
@@ -1157,6 +1158,21 @@ class PaymentService:
                 order_id,
                 plan_type,
             )
+
+        payment_user = user_service.get_user(order_data["user_id"]) if order_data.get("user_id") is not None else {}
+        user_activity_service.record(
+            user_id=int(order_data["user_id"]),
+            action="payment_success",
+            identifier=payment_user.get("email") or payment_user.get("phone_number") or payment_user.get("login_identifier"),
+            details={
+                "order_id": order_id,
+                "payment_id": payment_id,
+                "plan_type": plan_type,
+                "payment_status": payment_status,
+                "expiry": expiry,
+                "activation_result": activation_result.get("reason") if isinstance(activation_result, dict) else None,
+            },
+        )
 
         return {
             "status": "processed",

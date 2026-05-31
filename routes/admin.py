@@ -73,8 +73,19 @@ def admin_required(view_func):
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         if not web_identity_service.is_admin_authenticated():
-            flash("Please log in as admin first.", "error")
+            flash("Please log in with an authorized role first.", "error")
             return redirect(url_for("auth.login"))
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
+def full_admin_required(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not web_identity_service.has_full_admin_access():
+            flash("This page is available only to admin accounts.", "error")
+            return redirect(url_for("admin.admin_dashboard"))
         return view_func(*args, **kwargs)
 
     return wrapper
@@ -82,6 +93,10 @@ def admin_required(view_func):
 
 def _is_super_admin(user: dict | None) -> bool:
     return bool(user and str(user.get("user_role") or "") == "super_admin")
+
+
+def _role_name(user: dict | None) -> str:
+    return str((user or {}).get("user_role") or web_identity_service.get_role() or "user")
 
 
 def _utc_now_iso() -> str:
@@ -577,8 +592,32 @@ def _coerce_positive_int(value, default: int = 1) -> int:
 def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_values: dict[str, str | int]):
     action = (request.form.get("action") or "").strip()
     return_anchor = _sanitize_admin_anchor(request.form.get("return_anchor") or request.args.get("return_anchor"))
+    current_role = _role_name(current_user)
+    full_admin_actions = {
+        "update_price",
+        "save_plan",
+        "toggle_plan",
+        "save_category",
+        "delete_category",
+        "save_sub_exam",
+        "delete_sub_exam",
+        "add_set",
+        "update_set_position",
+        "rename_set",
+        "save_question",
+        "toggle_set_lock",
+        "delete_question",
+        "delete_set",
+        "delete_exam",
+        "save_quiz_settings",
+    }
 
     try:
+        if action in full_admin_actions and not web_identity_service.has_full_admin_access(current_role):
+            raise ValueError("This action is available only to admin accounts.")
+        if action == "bulk_import" and not web_identity_service.can_use_bulk_upload(current_role):
+            raise ValueError("This action is available only to uploader or admin accounts.")
+
         if action == "update_price":
             payment_service.update_premium_price(
                 request.form.get("plan_type", ""),
@@ -793,6 +832,10 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
             if not pending:
                 flash("No pending similar-question action was found.", "error")
                 return _admin_dashboard_redirect(redirect_values, anchor="question-editor")
+            if pending.get("mode") == "bulk" and not web_identity_service.can_use_bulk_upload(current_role):
+                raise ValueError("This action is available only to uploader or admin accounts.")
+            if pending.get("mode") != "bulk" and not web_identity_service.has_full_admin_access(current_role):
+                raise ValueError("This action is available only to admin accounts.")
             form_data = dict(pending.get("form_data") or {})
             if pending.get("mode") == "manual":
                 question_id = int(form_data.get("question_id") or 0) or None
@@ -850,6 +893,10 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
                 return _admin_dashboard_redirect(redirect_values, anchor="bulk-question-upload")
         elif action == "cancel_similar_question":
             pending = _clear_pending_question_duplicate()
+            if pending.get("mode") == "bulk" and not web_identity_service.can_use_bulk_upload(current_role):
+                raise ValueError("This action is available only to uploader or admin accounts.")
+            if pending.get("mode") != "bulk" and not web_identity_service.has_full_admin_access(current_role):
+                raise ValueError("This action is available only to admin accounts.")
             form_data = dict(pending.get("form_data") or {})
             image_path = form_data.get("image_path") or ""
             current_image_path = form_data.get("current_image_path") or ""
@@ -876,11 +923,18 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
             web_admin_service.delete_exam(int(request.form.get("exam_id", "0")))
             flash("Exam deleted successfully.", "success")
         elif action == "change_role":
-            if not _is_super_admin(current_user):
-                raise ValueError("Only the super admin can change website roles.")
+            if not web_identity_service.can_manage_roles(current_role):
+                raise ValueError("Only admin accounts can change website roles.")
+            target_user_id = int(request.form.get("target_user_id", "0"))
+            target_user = web_admin_service.get_dashboard_user(target_user_id) or {}
+            target_role = request.form.get("target_role", "")
+            if _is_super_admin(target_user) and not _is_super_admin(current_user):
+                raise ValueError("Only the super admin can change another super admin.")
+            if _is_super_admin(current_user) and str(target_role).strip().lower() == "super_admin":
+                raise ValueError("Super admin role is reserved and cannot be assigned from the web panel.")
             updated_user, status = web_admin_service.change_user_role(
-                int(request.form.get("target_user_id", "0")),
-                request.form.get("target_role", ""),
+                target_user_id,
+                target_role,
             )
             if not updated_user and status == "not_found":
                 raise ValueError("Target user not found.")
@@ -909,6 +963,7 @@ def _handle_admin_post(current_user: dict | None, *, endpoint: str, redirect_val
 @admin_required
 def admin_dashboard():
     current_user = web_identity_service.get_authenticated_user_snapshot()
+    current_role = _role_name(current_user)
 
     if request.method == "POST":
         redirect_values: dict[str, str | int] = {}
@@ -948,6 +1003,10 @@ def admin_dashboard():
         support_telegram=SUPPORT_TELEGRAM,
         admin_authenticated=True,
         current_user=current_user,
+        can_view_payment_logs=web_identity_service.can_view_payment_logs(current_role),
+        can_use_bulk_upload=web_identity_service.can_use_bulk_upload(current_role),
+        has_full_admin_access=web_identity_service.has_full_admin_access(current_role),
+        can_manage_roles=web_identity_service.can_manage_roles(current_role),
         current_admin_account=current_admin_account,
         current_admin_telegram_link=current_admin_telegram_link,
         pending_question_duplicate=pending_question_duplicate,
@@ -959,10 +1018,30 @@ def admin_dashboard():
     )
 
 
-@admin_blueprint.route("/admin/users/<int:user_id>", methods=["GET"])
-@admin_required
+@admin_blueprint.route("/admin/users/<int:user_id>", methods=["GET", "POST"])
+@full_admin_required
 def admin_user_detail(user_id: int):
     current_user = web_identity_service.get_authenticated_user_snapshot()
+    current_role = _role_name(current_user)
+    if request.method == "POST":
+        if not web_identity_service.can_manage_roles(current_role):
+            flash("Only admin accounts can change website roles.", "error")
+            return redirect(url_for("admin.admin_user_detail", user_id=user_id))
+        target_role = request.form.get("target_role", "")
+        target_user = web_admin_service.get_dashboard_user(user_id) or {}
+        if _is_super_admin(target_user) and not _is_super_admin(current_user):
+            flash("Only the super admin can change another super admin.", "error")
+            return redirect(url_for("admin.admin_user_detail", user_id=user_id))
+        if str(target_role).strip().lower() == "super_admin":
+            flash("Super admin role is reserved and cannot be assigned from the web panel.", "error")
+            return redirect(url_for("admin.admin_user_detail", user_id=user_id))
+        updated_user, status = web_admin_service.change_user_role(user_id, target_role)
+        if not updated_user and status == "not_found":
+            flash("User not found.", "error")
+        else:
+            flash("User role updated successfully.", "success")
+        return redirect(url_for("admin.admin_user_detail", user_id=user_id))
+
     detail = web_admin_service.get_user_detail(user_id)
     if not detail:
         flash("User not found.", "error")
@@ -980,6 +1059,9 @@ def admin_user_detail(user_id: int):
         user_telegram_link=detail.get("telegram_link") or {},
         activity_summary=detail["activity_summary"],
         recent_attempts=detail["recent_attempts"],
+        recent_activity=detail.get("recent_activity") or [],
+        can_manage_roles=web_identity_service.can_manage_roles(current_role),
+        available_roles=["admin", "manager", "uploader", "user"],
     )
 
 
@@ -1001,7 +1083,7 @@ def admin_telegram_link():
 
 
 @admin_blueprint.route("/admin/exams", methods=["GET", "POST"])
-@admin_required
+@full_admin_required
 def admin_exams():
     current_user = web_identity_service.get_authenticated_user_snapshot()
     if request.method == "POST":
@@ -1020,7 +1102,7 @@ def admin_exams():
 
 
 @admin_blueprint.route("/admin/exams/<int:exam_id>/sets", methods=["GET", "POST"])
-@admin_required
+@full_admin_required
 def admin_exam_sets(exam_id: int):
     current_user = web_identity_service.get_authenticated_user_snapshot()
     page = _coerce_positive_int(request.args.get("page"), 1)
@@ -1049,7 +1131,7 @@ def admin_exam_sets(exam_id: int):
 
 
 @admin_blueprint.route("/admin/sets/<int:set_id>/questions", methods=["GET", "POST"])
-@admin_required
+@full_admin_required
 def admin_set_questions(set_id: int):
     current_user = web_identity_service.get_authenticated_user_snapshot()
     set_overview = web_admin_service.get_set_overview(set_id)

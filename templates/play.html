@@ -4,15 +4,19 @@
 <section class="section quiz-play-section">
     <div class="container narrow quiz-play-shell">
         <div class="quiz-topline quiz-topline-play">
-            <div>
-                <span class="eyebrow">Playing {{ current_set.title if current_set else "Quiz" }}</span>
+            <div class="quiz-play-header">
+                <span class="eyebrow quiz-play-set-name">Playing {{ current_set.title if current_set else "Quiz" }}</span>
                 <h1>Question {{ question.number }} of {{ question.total }}</h1>
-                <p>{{ quiz_session.correct_count }} correct | {{ quiz_session.wrong_count }} wrong | {{ quiz_session.skipped_count }} skipped | {{ "%.2f"|format((question.number - 1) / question.total * 100) }}% completed</p>
+                <p class="quiz-play-progress">{{ quiz_session.correct_count }} correct | {{ quiz_session.wrong_count }} wrong | {{ quiz_session.skipped_count }} skipped | {{ "%.2f"|format((question.number - 1) / question.total * 100) }}% completed</p>
             </div>
             <div class="timer-card quiz-timer-card">
                 <span>Time left</span>
                 <strong id="timer-value">{{ question.remaining_seconds }}</strong>
-                <p class="helper-text quiz-play-helper">Base {{ question.time_limit }} sec | Current bonus +{{ question.current_bonus_seconds or quiz_session.bonus_seconds or 0 }} sec | Total {{ question.allowed_seconds or question.time_limit }} sec</p>
+                {% if question.current_bonus_seconds or quiz_session.bonus_seconds %}
+                <p class="helper-text quiz-play-helper">Current bonus +{{ question.current_bonus_seconds or quiz_session.bonus_seconds or 0 }} sec | Total {{ question.allowed_seconds or question.time_limit }} sec</p>
+                {% else %}
+                <p class="helper-text quiz-play-helper">Total {{ question.allowed_seconds or question.time_limit }} sec</p>
+                {% endif %}
             </div>
         </div>
 

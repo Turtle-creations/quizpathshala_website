@@ -5,6 +5,7 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from config import BOT_USERNAME, SUPER_ADMIN_EMAIL, SUPPORT_TELEGRAM
 from services.premium_service_db import premium_service
 from services.telegram_link_service import telegram_link_service
+from services.user_activity_service import user_activity_service
 from services.web_identity_service import web_identity_service
 from services.web_password_reset_service import web_password_reset_service
 from services.web_quiz_service import web_quiz_service
@@ -34,7 +35,7 @@ def login_required(view_func):
 def _is_admin_role(user: dict | None) -> bool:
     if not user:
         return False
-    return str(user.get("user_role") or "") in {"admin", "super_admin"} or bool(user.get("is_admin"))
+    return web_identity_service.has_admin_console_access(user.get("user_role"))
 
 
 def _clear_password_reset_session() -> None:
@@ -109,6 +110,14 @@ def login():
                 return redirect(url_for("auth.login"))
 
             web_identity_service.set_authenticated_user(user)
+            user_activity_service.record(
+                user_id=int(user["user_id"]),
+                action="login",
+                identifier=user.get("email") or user.get("phone_number") or user.get("login_identifier") or login_identifier,
+                ip_address=request.headers.get("X-Forwarded-For", request.remote_addr),
+                user_agent=request.headers.get("User-Agent"),
+                details={"role": user.get("user_role")},
+            )
             _clear_password_reset_session()
             flash("Login successful.", "success")
             if _is_admin_role(user):

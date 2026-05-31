@@ -466,7 +466,7 @@ class TelegramLinkService:
         return None, destination_count + source_count
 
     def _preferred_role(self, destination_role: str | None, source_role: str | None) -> str:
-        priority = {"user": 0, "admin": 1, "super_admin": 2}
+        priority = {"user": 0, "uploader": 1, "manager": 2, "admin": 3, "super_admin": 4}
         destination_value = priority.get(str(destination_role or "user"), 0)
         source_value = priority.get(str(source_role or "user"), 0)
         return str(destination_role or source_role or "user") if destination_value >= source_value else str(source_role)

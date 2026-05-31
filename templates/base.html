@@ -11,7 +11,7 @@
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}{{ request.path }}">
     {% endif %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}?v=7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}?v=10">
 </head>
 <body class="{{ body_class or '' }}">
     <header class="site-header{% if compact_quiz_nav %} site-header-quiz-sidebar navbar-collapsed{% endif %}" data-collapsible-navbar data-navbar-mode="{{ 'quiz-sidebar' if compact_quiz_nav else 'default' }}">

@@ -84,9 +84,7 @@ def create_app() -> Flask:
     def inject_site_context():
         current_user = web_identity_service.get_authenticated_user_snapshot()
         current_role = current_user.get("user_role") if current_user else ""
-        admin_authenticated = bool(
-            current_user and (current_role in {"admin", "super_admin"} or current_user.get("is_admin"))
-        ) or web_identity_service.is_admin_authenticated()
+        admin_authenticated = bool(current_user and web_identity_service.has_admin_console_access(current_role)) or web_identity_service.is_admin_authenticated()
         return {
             "site_name": SITE_NAME,
             "tagline": SITE_TAGLINE,
